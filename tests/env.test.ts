@@ -1,0 +1,39 @@
+import { describe, expect, it } from "vitest";
+import { parseEnv } from "../src/config/env.js";
+
+describe("Environment Validation", () => {
+  it("validates valid environment configuration successfully", () => {
+    const validConfig = {
+      DISCORD_TOKEN: "mock_test_token",
+      DISCORD_CLIENT_ID: "1234567890",
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+      NODE_ENV: "test",
+      LOG_LEVEL: "debug",
+    };
+
+    const parsed = parseEnv(validConfig);
+    expect(parsed.DISCORD_TOKEN).toBe("mock_test_token");
+    expect(parsed.NODE_ENV).toBe("test");
+    expect(parsed.LOG_LEVEL).toBe("debug");
+  });
+
+  it("applies defaults for NODE_ENV and LOG_LEVEL", () => {
+    const minimalConfig = {
+      DISCORD_TOKEN: "mock_test_token",
+      DISCORD_CLIENT_ID: "1234567890",
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+    };
+
+    const parsed = parseEnv(minimalConfig);
+    expect(parsed.NODE_ENV).toBe("development");
+    expect(parsed.LOG_LEVEL).toBe("info");
+  });
+
+  it("throws when required variables are missing", () => {
+    const invalidConfig = {
+      NODE_ENV: "development",
+    };
+
+    expect(() => parseEnv(invalidConfig)).toThrow("Environment variable validation failed");
+  });
+});
