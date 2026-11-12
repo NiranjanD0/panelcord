@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 import { parseEnv } from "../src/config/env.js";
 
 describe("Environment Validation", () => {
-  it("validates valid environment configuration successfully", () => {
-    const validConfig = {
-      DISCORD_TOKEN: "mock_test_token",
-      DISCORD_CLIENT_ID: "1234567890",
-      DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
-      NODE_ENV: "test",
-      LOG_LEVEL: "debug",
-    };
+  const baseValidConfig = {
+    DISCORD_TOKEN: "mock_test_token",
+    DISCORD_CLIENT_ID: "1234567890",
+    DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
+    NODE_ENV: "test",
+    LOG_LEVEL: "debug",
+  };
 
-    const parsed = parseEnv(validConfig);
+  it("validates valid environment configuration successfully", () => {
+    const parsed = parseEnv(baseValidConfig);
     expect(parsed.DISCORD_TOKEN).toBe("mock_test_token");
     expect(parsed.NODE_ENV).toBe("test");
     expect(parsed.LOG_LEVEL).toBe("debug");
@@ -35,5 +35,32 @@ describe("Environment Validation", () => {
     };
 
     expect(() => parseEnv(invalidConfig)).toThrow("Environment variable validation failed");
+  });
+
+  it("throws when NODE_ENV is an invalid enum value", () => {
+    const invalidConfig = {
+      ...baseValidConfig,
+      NODE_ENV: "invalid_env",
+    };
+
+    expect(() => parseEnv(invalidConfig)).toThrow("Environment variable validation failed");
+  });
+
+  it("throws when LOG_LEVEL is an invalid enum value", () => {
+    const invalidConfig = {
+      ...baseValidConfig,
+      LOG_LEVEL: "invalid_level",
+    };
+
+    expect(() => parseEnv(invalidConfig)).toThrow("Environment variable validation failed");
+  });
+
+  it("throws when DISCORD_TOKEN is empty string", () => {
+    const invalidConfig = {
+      ...baseValidConfig,
+      DISCORD_TOKEN: "",
+    };
+
+    expect(() => parseEnv(invalidConfig)).toThrow("DISCORD_TOKEN is required");
   });
 });

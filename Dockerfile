@@ -50,6 +50,8 @@ RUN pnpm install --prod --frozen-lockfile && pnpm prisma:generate
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/database/generated ./src/database/generated
 
+RUN chown -R node:node /app
+
 USER node
 
 ENTRYPOINT ["dumb-init", "--"]
