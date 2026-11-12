@@ -38,6 +38,11 @@ _For details on the decision to use modular vanilla `discord.js` over opinionate
 - **Core Commands**:
   - `/ping`: Measures roundtrip latency and WebSocket heartbeat.
   - `/about`: Displays bot information, system status, uptime, and versions.
+  - `/panel connect`: Securely connects a Pterodactyl panel via a Discord modal dialog.
+  - `/panel disconnect [name]`: Disconnects a panel connection with interactive button confirmation.
+  - `/panel list`: Lists all connected Pterodactyl panels for the server.
+  - `/panel status [name]`: Performs a live connectivity and authentication health-check against the panel.
+  - `/panel settings [name]`: Inspects security, encryption, and SSRF configuration for a connected panel.
 - **Structured Logging**: Uses `pino` with pretty-printing in development and automatic credential redaction (tokens, passwords, database URLs).
 - **Graceful Shutdown**: Handles `SIGINT` and `SIGTERM` signals, ensuring clean Discord gateway disconnection and database connection pool termination.
 - **Environment Validation**: Validates all configuration at runtime using `zod` to prevent silent misconfigurations.

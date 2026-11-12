@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-11-13
+
+### Added
+
+- **Discord Panel Connection Workflow (`src/commands/panel.ts`, `src/services/panelWorkflowService.ts`)**:
+  - Implemented `/panel connect` slash command that opens an interactive Discord modal dialog collecting connection name, panel URL, and Pterodactyl Client API key.
+  - Implemented modal input validation with Zod (`connectModalSchema`), ensuring strict length limits and permitted character sets for connection names.
+  - Integrated pre-persistence live authentication and connectivity verification using existing `PanelConnectionService`.
+  - Added secure persistence of credentials via `PanelCredentialService` using AES-256-GCM encryption with contextual AAD and unique IVs.
+  - Added in-flight concurrency locking to prevent race conditions and duplicate submissions for the same connection name.
+  - Implemented `/panel list` command to display all connected panels for the guild with URLs, timestamps, and server mapping status.
+  - Implemented `/panel status` command performing live connectivity and authentication verification with detailed error reporting (distinguishing authentication failure, insufficient permissions, panel unreachable, timeout, and URL errors).
+  - Implemented `/panel settings` command to inspect connection metadata, ID, encryption key version, and SSRF security status.
+  - Implemented `/panel disconnect` command with interactive button confirmation dialog (Confirm/Cancel) before deleting credentials, complete with structured audit logging.
+  - Added dynamic autocomplete support for the `name` option in `/panel disconnect`, `/panel status`, and `/panel settings`.
+- **Security & Multi-Tenant Isolation**:
+  - Enforced Discord `ManageGuild` permission verification across all connection and modification endpoints.
+  - Guaranteed zero plaintext storage and zero secret exposure: API keys are never rendered in Discord messages, embeds, logs, or error responses.
+  - Preserved multi-tenant SSRF protections restricting private/loopback/RFC1918 address access by default.
+
 ## [0.8.1] - 2026-11-13
 
 ### Fixed
