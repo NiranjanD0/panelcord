@@ -23,6 +23,7 @@ export interface PanelConnectionParams {
   panelUrl: string;
   apiKey: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface PanelConnectionResult {

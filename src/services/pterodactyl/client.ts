@@ -74,12 +74,19 @@ export class PterodactylClient {
     this.apiKey = config.apiKey.trim();
     this.defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
+    const baseRetryCodes = config.retry?.retryableStatusCodes ?? DEFAULT_RETRYABLE_STATUS_CODES;
+    const retryHttp500 = config.retry?.retryHttp500 === true;
+    const initialRetryCodes =
+      retryHttp500 && !baseRetryCodes.includes(500) ? [...baseRetryCodes, 500] : baseRetryCodes;
+
     this.retryConfig = {
       maxRetries: config.retry?.maxRetries ?? DEFAULT_MAX_RETRIES,
       baseDelayMs: config.retry?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
       maxDelayMs: config.retry?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
       jitter: config.retry?.jitter ?? true,
-      retryableStatusCodes: config.retry?.retryableStatusCodes ?? DEFAULT_RETRYABLE_STATUS_CODES,
+      retryableStatusCodes: initialRetryCodes,
+      retryHttp500,
+      exceededMaxDelayBehavior: config.retry?.exceededMaxDelayBehavior ?? "fail",
     };
 
     this.concurrencyManager =
@@ -147,13 +154,17 @@ export class PterodactylClient {
     path: string,
     options?: RequestOptions,
   ): Promise<T> {
+    const effectiveRetryCodes = this.resolveRetryableStatusCodes(options?.retry);
+
     const effectiveRetryConfig: Required<RetryConfig> = {
       maxRetries: options?.retry?.maxRetries ?? this.retryConfig.maxRetries,
       baseDelayMs: options?.retry?.baseDelayMs ?? this.retryConfig.baseDelayMs,
       maxDelayMs: options?.retry?.maxDelayMs ?? this.retryConfig.maxDelayMs,
       jitter: options?.retry?.jitter ?? this.retryConfig.jitter,
-      retryableStatusCodes:
-        options?.retry?.retryableStatusCodes ?? this.retryConfig.retryableStatusCodes,
+      retryableStatusCodes: effectiveRetryCodes,
+      retryHttp500: options?.retry?.retryHttp500 ?? this.retryConfig.retryHttp500,
+      exceededMaxDelayBehavior:
+        options?.retry?.exceededMaxDelayBehavior ?? this.retryConfig.exceededMaxDelayBehavior,
     };
 
     const isIdempotent = isIdempotentMethod(method);
@@ -200,11 +211,29 @@ export class PterodactylClient {
           err instanceof PterodactylRateLimitError ? err.retryAfterSeconds : undefined;
 
         const delayMs = calculateBackoff(attempt, effectiveRetryConfig, retryAfterSeconds);
+        if (delayMs < 0) {
+          // Server's requested delay exceeds maxDelayMs under "fail" policy; never retry early
+          if (err instanceof PterodactylError) {
+            err.attemptCount = attemptCount;
+            err.isRetryable = false;
+          }
+          throw err;
+        }
 
         await sleep(delayMs, options?.signal);
         attempt++;
       }
     }
+  }
+
+  private resolveRetryableStatusCodes(requestRetry?: RetryConfig): number[] {
+    const baseCodes = requestRetry?.retryableStatusCodes ?? this.retryConfig.retryableStatusCodes;
+    const retryHttp500 = requestRetry?.retryHttp500 ?? this.retryConfig.retryHttp500;
+
+    if (retryHttp500 && !baseCodes.includes(500)) {
+      return [...baseCodes, 500];
+    }
+    return baseCodes;
   }
 
   private isErrorRetryable(err: unknown, retryableStatuses: number[]): boolean {

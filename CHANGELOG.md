@@ -16,14 +16,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
   - Added specialized error classes `PterodactylAbortError` and `PterodactylQueueFullError`.
 - **Request Safety & Method Idempotency**:
   - Restricted automated retries strictly to safe/idempotent HTTP methods (`GET`, `HEAD`, `OPTIONS`) by default.
-  - Guarded mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`) against blind retries, allowing retries only when explicitly opted in via `retryUnsafeMethods: true`.
-  - Automatic retries targeted exclusively at transient failures (HTTP 429, 502, 503, 504, connection drops, and request timeouts). Permanent failures (HTTP 400, 401, 403, 404, 422, 500, non-JSON responses, URL validation failures) fail immediately on attempt 1.
+  - Guarded mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`) against blind retries, ensuring `retryUnsafeMethods: true` is strictly an explicit per-operation decision in `RequestOptions`, never a client-wide default.
+  - Automatic retries targeted exclusively at transient failures (HTTP 429, 502, 503, 504, connection drops, and request timeouts). Added configurable `retryHttp500` and `retryableStatusCodes` overrides for panels experiencing transient internal errors.
+  - Guarded against early retries when `Retry-After` exceeds `maxDelayMs` via `exceededMaxDelayBehavior: "fail" | "defer"`. The client never retries earlier than the panel requested, failing immediately by default instead of silently retrying early.
 - **Per-Panel Concurrency Management**:
   - Implemented `PanelConcurrencyManager` in `src/services/pterodactyl/resilience/concurrency.ts` to manage request concurrency (`maxConcurrent: 5`) and bounded queuing (`maxQueueSize: 100`) isolated per panel origin.
   - Ensures slow or unresponsive panels never block or delay operations targeting other panels.
-  - Supports `AbortSignal` cancellation for queued requests, immediately removing them from the pending queue and rejecting with `PterodactylAbortError` without consuming concurrency capacity.
+  - Supports `AbortSignal` cancellation for queued requests, immediately removing them from the pending queue and releasing idle queues from memory without consuming concurrency capacity.
+  - Guarantees concurrency slots are freed in `finally` even after exceptions.
+- **Panel Connection Service Lifecycle**:
+  - Wired `AbortSignal` cancellation through `verifyConnection` and `AccountEndpoint.getAccountDetails`, allowing callers to abort connection testing immediately while preserving fast diagnostics (`maxRetries: 0`) and custom `timeoutMs` handling.
 - **Automated Test Suite**:
-  - Added 38 automated tests in `tests/pterodactyl/resilience.test.ts` covering Retry-After parsing, exponential backoff, jitter distribution, retryable status codes, method idempotency, concurrency slot limits, queue exhaustion, per-panel isolation, cancellation during queueing and sleep, and credential redaction.
+  - Added 46 automated tests in `tests/pterodactyl/resilience.test.ts` and 18 in `tests/pterodactyl/connectionService.test.ts` covering Retry-After parsing, exponential backoff, jitter distribution, retryable status codes, HTTP 500 configurability, method idempotency, concurrency slot limits, queue exhaustion, idle queue cleanup, cancellation during queueing/sleep, connection timeout/abort, and credential redaction.
 
 ## [0.5.1] - 2026-11-12
 

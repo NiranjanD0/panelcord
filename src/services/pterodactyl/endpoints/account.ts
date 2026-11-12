@@ -8,9 +8,12 @@ export class AccountEndpoint {
    * Retrieves the current user's account details from the Pterodactyl Client API.
    * Endpoint: GET /api/client/account
    */
-  public async getAccountDetails(): Promise<PterodactylFractalItem<PterodactylAccountAttributes>> {
+  public async getAccountDetails(options?: {
+    signal?: AbortSignal;
+  }): Promise<PterodactylFractalItem<PterodactylAccountAttributes>> {
     return this.client.get<PterodactylFractalItem<PterodactylAccountAttributes>>(
       "/api/client/account",
+      options,
     );
   }
 

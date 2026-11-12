@@ -11,6 +11,18 @@ export interface RetryConfig {
   jitter?: boolean;
   /** HTTP status codes considered retryable (default: [429, 502, 503, 504]) */
   retryableStatusCodes?: number[];
+  /**
+   * Whether to treat HTTP 500 Internal Server Error as a retryable transient failure.
+   * Default: false (Pterodactyl 500s often indicate unrecoverable DB/code exceptions,
+   * but some self-hosted panels experience transient internal errors).
+   */
+  retryHttp500?: boolean;
+  /**
+   * Policy when a server's Retry-After header exceeds the configured maxDelayMs.
+   * - "fail" (default): Never retry earlier than requested; fail immediately with PterodactylRateLimitError.
+   * - "defer": Respect the server's full delay without capping at maxDelayMs.
+   */
+  exceededMaxDelayBehavior?: "fail" | "defer";
 }
 
 export interface ConcurrencyConfig {

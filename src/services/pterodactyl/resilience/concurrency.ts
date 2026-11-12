@@ -77,7 +77,7 @@ export class PanelConcurrencyManager {
     // If below concurrency capacity, execute immediately
     if (panelQueue.activeCount < panelQueue.maxConcurrent) {
       panelQueue.activeCount++;
-      return this.runTask(panelQueue, execute);
+      return this.runTask(panelOrigin, panelQueue, execute);
     }
 
     // Check bounded queue capacity
@@ -110,6 +110,7 @@ export class PanelConcurrencyManager {
           if (index !== -1) {
             panelQueue.queue.splice(index, 1);
           }
+          this.cleanupQueueIfIdle(panelOrigin, panelQueue);
           item.reject(
             new PterodactylAbortError("Request cancelled while waiting in concurrency queue.", {
               cause: signal.reason,
@@ -123,16 +124,20 @@ export class PanelConcurrencyManager {
     });
   }
 
-  private async runTask<T>(panelQueue: PanelQueue, execute: () => Promise<T>): Promise<T> {
+  private async runTask<T>(
+    panelOrigin: string,
+    panelQueue: PanelQueue,
+    execute: () => Promise<T>,
+  ): Promise<T> {
     try {
       return await execute();
     } finally {
       panelQueue.activeCount--;
-      this.drainQueue(panelQueue);
+      this.drainQueue(panelOrigin, panelQueue);
     }
   }
 
-  private drainQueue(panelQueue: PanelQueue): void {
+  private drainQueue(panelOrigin: string, panelQueue: PanelQueue): void {
     while (panelQueue.queue.length > 0 && panelQueue.activeCount < panelQueue.maxConcurrent) {
       const next = panelQueue.queue.shift();
       if (!next) break;
@@ -143,18 +148,24 @@ export class PanelConcurrencyManager {
       }
 
       panelQueue.activeCount++;
-      this.runTask(panelQueue, next.execute).then(next.resolve, next.reject);
+      this.runTask(panelOrigin, panelQueue, next.execute).then(next.resolve, next.reject);
     }
 
-    // Cleanup idle queues to conserve memory
+    this.cleanupQueueIfIdle(panelOrigin, panelQueue);
+  }
+
+  private cleanupQueueIfIdle(panelOrigin: string, panelQueue: PanelQueue): void {
     if (panelQueue.activeCount === 0 && panelQueue.queue.length === 0) {
-      for (const [origin, queue] of this.panels.entries()) {
-        if (queue === panelQueue && queue.activeCount === 0 && queue.queue.length === 0) {
-          this.panels.delete(origin);
-          break;
-        }
-      }
+      this.panels.delete(panelOrigin);
     }
+  }
+
+  public hasQueue(panelOrigin: string): boolean {
+    return this.panels.has(panelOrigin);
+  }
+
+  public get queueCount(): number {
+    return this.panels.size;
   }
 
   public getActiveCount(panelOrigin: string): number {
