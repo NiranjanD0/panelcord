@@ -7,6 +7,9 @@ import { logger } from "../utils/logger.js";
 export const DISCORD_COMMAND_NAME_REGEX =
   /^[-_\p{Ll}\p{Lm}\p{Lo}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$/u;
 
+// Discord Snowflake specification: 17-20 digit numeric string
+export const DISCORD_SNOWFLAKE_REGEX = /^\d{17,20}$/;
+
 export const commandDataSchema = z.object({
   name: z
     .string()
@@ -27,6 +30,7 @@ export interface CommandDeployOptions {
   clientId: string;
   commands: Command[];
   guildId?: string;
+  allowEmpty?: boolean;
 }
 
 export interface CommandDeployResult {
@@ -75,34 +79,57 @@ export function validateCommands(commands: Command[]): void {
  * Registers application slash commands globally or to a specific development guild.
  */
 export async function deployCommands(options: CommandDeployOptions): Promise<CommandDeployResult> {
-  const { rest, clientId, commands, guildId } = options;
+  const { rest, clientId, commands, guildId, allowEmpty } = options;
 
   if (!clientId || clientId.trim().length === 0) {
     throw new Error("Cannot deploy commands: clientId is required.");
   }
 
+  const cleanClientId = clientId.trim();
+  if (!DISCORD_SNOWFLAKE_REGEX.test(cleanClientId)) {
+    throw new Error(
+      `Cannot deploy commands: clientId "${clientId}" is not a valid Discord Snowflake (must be a 17-20 digit numeric string).`,
+    );
+  }
+
+  let cleanGuildId: string | undefined;
+  if (guildId && guildId.trim().length > 0) {
+    cleanGuildId = guildId.trim();
+    if (!DISCORD_SNOWFLAKE_REGEX.test(cleanGuildId)) {
+      throw new Error(
+        `Cannot deploy commands: guildId "${guildId}" is not a valid Discord Snowflake (must be a 17-20 digit numeric string).`,
+      );
+    }
+  }
+
+  if (commands.length === 0 && !allowEmpty) {
+    throw new Error(
+      "Cannot deploy empty command list without explicit allowEmpty: true flag. This prevents accidentally deleting all registered application commands on Discord.",
+    );
+  }
+
   validateCommands(commands);
 
   const payload = commands.map((cmd) => cmd.data.toJSON());
-  const target: "guild" | "global" = guildId && guildId.trim().length > 0 ? "guild" : "global";
+  const target: "guild" | "global" = cleanGuildId ? "guild" : "global";
 
   logger.info(
-    { count: payload.length, target, guildId: target === "guild" ? guildId : undefined },
+    { count: payload.length, target, guildId: cleanGuildId },
     "Deploying slash commands to Discord...",
   );
 
-  if (target === "guild" && guildId) {
-    await rest.put(Routes.applicationGuildCommands(clientId, guildId.trim()), {
+  if (target === "guild" && cleanGuildId) {
+    await rest.put(Routes.applicationGuildCommands(cleanClientId, cleanGuildId), {
       body: payload,
     });
   } else {
-    await rest.put(Routes.applicationCommands(clientId), {
+    await rest.put(Routes.applicationCommands(cleanClientId), {
       body: payload,
     });
   }
 
   logger.info(
-    { count: payload.length, target, guildId: target === "guild" ? guildId : undefined },
+    { count: payload.length, target, guildId: cleanGuildId },
     "Successfully registered slash commands.",
   );
 
@@ -110,6 +137,6 @@ export async function deployCommands(options: CommandDeployOptions): Promise<Com
     success: true,
     commandCount: payload.length,
     target,
-    guildId: target === "guild" ? guildId : undefined,
+    guildId: cleanGuildId,
   };
 }

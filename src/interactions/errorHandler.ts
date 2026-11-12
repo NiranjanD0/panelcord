@@ -72,34 +72,38 @@ export async function handleInteractionError(
   error: unknown,
   interaction: Interaction,
 ): Promise<void> {
-  const context = extractInteractionContext(interaction);
+  try {
+    const context = extractInteractionContext(interaction);
 
-  // If the interaction expired, attempting to respond will only fail with another 10062
-  if (error instanceof DiscordAPIError && error.code === DISCORD_ERROR_UNKNOWN_INTERACTION) {
-    logger.warn(context, "Interaction token expired or unknown; unable to respond.");
-    return;
-  }
-
-  logger.error({ error, ...context }, "Interaction execution encountered an error");
-
-  // Only attempt to respond if the interaction is repliable
-  const responding = interaction as unknown as RespondingInteraction;
-  if (typeof responding.reply === "function" || typeof responding.followUp === "function") {
-    try {
-      const friendlyMessage = getUserFriendlyErrorMessage(error);
-      const payload = createErrorPayload(friendlyMessage, true);
-
-      if (responding.replied || responding.deferred) {
-        if (typeof responding.followUp === "function") {
-          await responding.followUp(payload);
-        } else if (typeof responding.editReply === "function") {
-          await responding.editReply(payload);
-        }
-      } else {
-        await safeReply(responding, payload);
-      }
-    } catch (replyError) {
-      logger.warn({ error: replyError, ...context }, "Failed to send error response to user.");
+    // If the interaction expired, attempting to respond will only fail with another 10062
+    if (error instanceof DiscordAPIError && error.code === DISCORD_ERROR_UNKNOWN_INTERACTION) {
+      logger.warn(context, "Interaction token expired or unknown; unable to respond.");
+      return;
     }
+
+    logger.error({ error, ...context }, "Interaction execution encountered an error");
+
+    // Only attempt to respond if the interaction is repliable
+    const responding = interaction as unknown as RespondingInteraction;
+    if (typeof responding.reply === "function" || typeof responding.followUp === "function") {
+      try {
+        const friendlyMessage = getUserFriendlyErrorMessage(error);
+        const payload = createErrorPayload(friendlyMessage, true);
+
+        if (responding.replied || responding.deferred) {
+          if (typeof responding.followUp === "function") {
+            await responding.followUp(payload);
+          } else if (typeof responding.editReply === "function") {
+            await responding.editReply(payload);
+          }
+        } else {
+          await safeReply(responding, payload);
+        }
+      } catch (replyError) {
+        logger.warn({ error: replyError, ...context }, "Failed to send error response to user.");
+      }
+    }
+  } catch (fatalError) {
+    logger.error({ fatalError }, "Fatal error during interaction error handling");
   }
 }

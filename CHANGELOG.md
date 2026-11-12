@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-11-13
+
+### Fixed
+
+- **Slash Command Deployment Safety (`src/lib/commandRegistration.ts`)**:
+  - Guarded against accidental global slash command deletion by throwing an error when an empty command array is supplied without explicit `allowEmpty: true`.
+  - Added Discord snowflake format validation (`/^\d{17,20}$/`) for `clientId` and `guildId`.
+- **RegExp State Pollution (`src/interactions/dispatcher.ts`)**:
+  - Ensured `customId.lastIndex = 0` is reset prior to `.exec()` matching, preventing handler failure on alternating executions when RegExp routes use `/g` or `/y` flags.
+- **Component Update Race Conditions (`src/interactions/responses.ts`)**:
+  - Handled Discord error `40060` (Interaction Already Acknowledged) in `safeUpdate` by gracefully falling back to `followUp`.
+  - Handled Discord error `10062` (Unknown Interaction) in `safeUpdate` by returning `null` to prevent unhandled rejections on expired tokens.
+- **Fail-Safe Interaction Error Handling (`src/interactions/errorHandler.ts`)**:
+  - Wrapped `handleInteractionError` in a top-level try/catch block so that unexpected exceptions or Discord API rejections during error reporting cannot trigger unhandled process rejections.
+- **Structured Error Serialization (`src/utils/logger.ts`)**:
+  - Bound standard Pino error serializers to both `err` and `error` keys so nested error causes and stack traces are properly structured in logs.
+
+### Added
+
+- **Interaction Handler Isolation & Warnings (`src/interactions/dispatcher.ts`)**:
+  - Added `clearHandlers()` to reset registered component and modal handlers for test isolation.
+  - Added warning log emits when registering duplicate string `customId` handlers.
+- **Declarative Deferral for Components (`src/types/interaction.ts`, `src/interactions/dispatcher.ts`)**:
+  - Added `defer`, `deferEphemeral`, and `deferUpdate` configuration options to button and select menu handlers.
+- **Autocomplete Interaction Routing (`src/types/command.ts`, `src/interactions/dispatcher.ts`)**:
+  - Added optional `autocomplete` callback on `Command` and wired interaction dispatching for autocomplete events.
+
 ## [0.8.0] - 2026-11-13
 
 ### Added

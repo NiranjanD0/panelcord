@@ -212,6 +212,37 @@ describe("Interaction Response Utilities (Phase 03.1)", () => {
       expect(interaction.editReply).toHaveBeenCalledWith({ content: "Deferred update" });
       expect(interaction.update).not.toHaveBeenCalled();
     });
+
+    it("falls back to followUp on 40060 Already Acknowledged error during update", async () => {
+      const error40060 = createMockDiscordAPIError(DISCORD_ERROR_INTERACTION_ALREADY_ACKNOWLEDGED);
+      const interaction = {
+        id: "btn_race",
+        replied: false,
+        deferred: false,
+        update: vi.fn().mockRejectedValue(error40060),
+        editReply: vi.fn(),
+        followUp: vi.fn().mockResolvedValue({ id: "msg_fallback" }),
+      } as unknown as RespondingInteraction;
+
+      const result = await safeUpdate(interaction, { content: "Fallback update" });
+      expect(interaction.followUp).toHaveBeenCalledWith({ content: "Fallback update" });
+      expect(result).toEqual({ id: "msg_fallback" });
+    });
+
+    it("handles 10062 Unknown Interaction during update by returning null", async () => {
+      const error10062 = createMockDiscordAPIError(DISCORD_ERROR_UNKNOWN_INTERACTION);
+      const interaction = {
+        id: "btn_expired",
+        replied: false,
+        deferred: false,
+        update: vi.fn().mockRejectedValue(error10062),
+        editReply: vi.fn(),
+        followUp: vi.fn(),
+      } as unknown as RespondingInteraction;
+
+      const result = await safeUpdate(interaction, { content: "Expired update" });
+      expect(result).toBeNull();
+    });
   });
 
   describe("safeDeferUpdate", () => {

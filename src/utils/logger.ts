@@ -14,6 +14,10 @@ export const logger = pino({
           },
         }
       : undefined,
+  serializers: {
+    err: pino.stdSerializers.err,
+    error: pino.stdSerializers.err,
+  },
   redact: {
     paths: [
       "token",

@@ -13,16 +13,24 @@ export type InteractionRouteParams = Record<string, string>;
 
 export interface ButtonHandler {
   customId: string | RegExp;
+  defer?: boolean;
+  deferEphemeral?: boolean;
+  deferUpdate?: boolean;
   execute: (interaction: ButtonInteraction, params?: InteractionRouteParams) => Promise<void>;
 }
 
 export interface ModalHandler {
   customId: string | RegExp;
+  defer?: boolean;
+  deferEphemeral?: boolean;
   execute: (interaction: ModalSubmitInteraction, params?: InteractionRouteParams) => Promise<void>;
 }
 
 export interface SelectMenuHandler {
   customId: string | RegExp;
+  defer?: boolean;
+  deferEphemeral?: boolean;
+  deferUpdate?: boolean;
   execute: (
     interaction: AnySelectMenuInteraction,
     params?: InteractionRouteParams,

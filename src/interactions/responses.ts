@@ -171,9 +171,22 @@ export async function safeUpdate(
 
     return await safeReply(interaction, options as InteractionReplyOptions);
   } catch (error) {
-    if (error instanceof DiscordAPIError && error.code === DISCORD_ERROR_UNKNOWN_INTERACTION) {
-      logger.warn({ interactionId: interaction.id }, "Cannot update: interaction expired.");
-      return null;
+    if (error instanceof DiscordAPIError) {
+      if (error.code === DISCORD_ERROR_UNKNOWN_INTERACTION) {
+        logger.warn({ interactionId: interaction.id }, "Cannot update: interaction expired.");
+        return null;
+      }
+      if (error.code === DISCORD_ERROR_INTERACTION_ALREADY_ACKNOWLEDGED) {
+        // Race condition: acknowledged concurrently, fallback to followUp
+        try {
+          if (typeof interaction.followUp === "function") {
+            return await interaction.followUp(options as InteractionReplyOptions);
+          }
+          return null;
+        } catch {
+          return null;
+        }
+      }
     }
     logger.error(
       { error, interactionId: interaction.id },

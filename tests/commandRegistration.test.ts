@@ -104,6 +104,9 @@ describe("Command Registration & Validation (Phase 03.1)", () => {
   });
 
   describe("deployCommands", () => {
+    const VALID_CLIENT_ID = "123456789012345678";
+    const VALID_GUILD_ID = "987654321098765432";
+
     it("deploys commands to a specific guild when guildId is provided", async () => {
       const mockRest = {
         put: vi.fn().mockResolvedValue([]),
@@ -116,18 +119,18 @@ describe("Command Registration & Validation (Phase 03.1)", () => {
 
       const result = await deployCommands({
         rest: mockRest,
-        clientId: "123456789",
+        clientId: VALID_CLIENT_ID,
         commands: [cmd],
-        guildId: "987654321",
+        guildId: VALID_GUILD_ID,
       });
 
       expect(result.success).toBe(true);
       expect(result.target).toBe("guild");
-      expect(result.guildId).toBe("987654321");
+      expect(result.guildId).toBe(VALID_GUILD_ID);
       expect(result.commandCount).toBe(1);
 
       expect(mockRest.put).toHaveBeenCalledWith(
-        "/applications/123456789/guilds/987654321/commands",
+        `/applications/${VALID_CLIENT_ID}/guilds/${VALID_GUILD_ID}/commands`,
         expect.objectContaining({
           body: [expect.objectContaining({ name: "ping" })],
         }),
@@ -146,7 +149,7 @@ describe("Command Registration & Validation (Phase 03.1)", () => {
 
       const result = await deployCommands({
         rest: mockRest,
-        clientId: "123456789",
+        clientId: VALID_CLIENT_ID,
         commands: [cmd],
       });
 
@@ -156,11 +159,72 @@ describe("Command Registration & Validation (Phase 03.1)", () => {
       expect(result.commandCount).toBe(1);
 
       expect(mockRest.put).toHaveBeenCalledWith(
-        "/applications/123456789/commands",
+        `/applications/${VALID_CLIENT_ID}/commands`,
         expect.objectContaining({
           body: [expect.objectContaining({ name: "about" })],
         }),
       );
+    });
+
+    it("prevents accidental deletion: throws if commands is empty without allowEmpty", async () => {
+      const mockRest = { put: vi.fn() } as unknown as REST;
+
+      await expect(
+        deployCommands({
+          rest: mockRest,
+          clientId: VALID_CLIENT_ID,
+          commands: [],
+        }),
+      ).rejects.toThrow(/Cannot deploy empty command list without explicit allowEmpty/);
+    });
+
+    it("allows deploying empty array when allowEmpty: true is explicitly provided", async () => {
+      const mockRest = {
+        put: vi.fn().mockResolvedValue([]),
+      } as unknown as REST;
+
+      const result = await deployCommands({
+        rest: mockRest,
+        clientId: VALID_CLIENT_ID,
+        commands: [],
+        allowEmpty: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.commandCount).toBe(0);
+      expect(mockRest.put).toHaveBeenCalledWith(`/applications/${VALID_CLIENT_ID}/commands`, {
+        body: [],
+      });
+    });
+
+    it("rejects non-snowflake clientId", async () => {
+      const mockRest = { put: vi.fn() } as unknown as REST;
+
+      await expect(
+        deployCommands({
+          rest: mockRest,
+          clientId: "invalid_client_id",
+          commands: [],
+          allowEmpty: true,
+        }),
+      ).rejects.toThrow(/not a valid Discord Snowflake/);
+    });
+
+    it("rejects non-snowflake guildId", async () => {
+      const mockRest = { put: vi.fn() } as unknown as REST;
+      const cmd: Command = {
+        data: new SlashCommandBuilder().setName("ping").setDescription("Ping"),
+        execute: async () => {},
+      };
+
+      await expect(
+        deployCommands({
+          rest: mockRest,
+          clientId: VALID_CLIENT_ID,
+          commands: [cmd],
+          guildId: "not-a-snowflake",
+        }),
+      ).rejects.toThrow(/not a valid Discord Snowflake/);
     });
 
     it("fails early if clientId is missing or empty", async () => {
