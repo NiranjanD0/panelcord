@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-13
+
+### Fixed
+
+- **Disconnect Button Acknowledgment Safety (`src/services/panelWorkflowService.ts`)**:
+  - Added `safeDeferUpdate` call immediately after permission validation in `handleDisconnectButton` to prevent Discord 3-second interaction token timeouts during database operations.
+- **Autocomplete Race Condition Protection (`src/services/panelWorkflowService.ts`)**:
+  - Guarded autocomplete responses with `interaction.responded` checks and added safe error fallbacks to prevent unhandled rejections on expired or cancelled autocomplete tokens.
+- **Subcommand Null-Safety (`src/services/panelWorkflowService.ts`)**:
+  - Added `options.getSubcommand(false)` null-safety check in `handleCommand` to provide user-friendly error messages if a raw interaction lacks a subcommand.
+
 ## [0.9.0] - 2026-11-13
 
 ### Added

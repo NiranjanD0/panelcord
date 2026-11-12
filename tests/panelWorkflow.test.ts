@@ -852,7 +852,8 @@ describe("Panel Connection Workflow (Phase 03.2)", () => {
       });
 
       expect(mockCredentialService.deleteConnection).not.toHaveBeenCalled();
-      expect(interaction.update).toHaveBeenCalledWith(
+      expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
           embeds: [
             expect.objectContaining({
@@ -887,6 +888,7 @@ describe("Panel Connection Workflow (Phase 03.2)", () => {
         connectionId: "conn_123",
       });
 
+      expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
       expect(mockCredentialService.deleteConnection).toHaveBeenCalledWith("guild_123", "conn_123");
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -897,7 +899,7 @@ describe("Panel Connection Workflow (Phase 03.2)", () => {
         expect.stringContaining("deleted by user"),
       );
 
-      expect(interaction.update).toHaveBeenCalledWith(
+      expect(interaction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
           embeds: [
             expect.objectContaining({
@@ -925,7 +927,8 @@ describe("Panel Connection Workflow (Phase 03.2)", () => {
         connectionId: "conn_missing",
       });
 
-      expect(interaction.update).toHaveBeenCalledWith(
+      expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+      expect(interaction.editReply).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining("no longer exists or has already been disconnected"),
           components: [],
@@ -972,6 +975,50 @@ describe("Panel Connection Workflow (Phase 03.2)", () => {
           value: "Production-US",
         },
       ]);
+    });
+
+    it("handles autocomplete outside of guild context by responding with empty list", async () => {
+      const respondFn = vi.fn().mockResolvedValue(undefined);
+      const interaction = {
+        guildId: null,
+        respond: respondFn,
+      } as unknown as AutocompleteInteraction;
+
+      await workflowService.handleAutocomplete(interaction);
+      expect(respondFn).toHaveBeenCalledWith([]);
+    });
+
+    it("handles database errors during autocomplete without throwing", async () => {
+      const respondFn = vi.fn().mockResolvedValue(undefined);
+      const interaction = {
+        guildId: "guild_123",
+        options: {
+          getFocused: vi.fn().mockReturnValue({ name: "name", value: "test" }),
+        },
+        respond: respondFn,
+      } as unknown as AutocompleteInteraction;
+
+      vi.mocked(mockCredentialService.listConnections).mockRejectedValue(
+        new Error("Database disconnected"),
+      );
+
+      await expect(workflowService.handleAutocomplete(interaction)).resolves.not.toThrow();
+      expect(respondFn).toHaveBeenCalledWith([]);
+    });
+  });
+
+  describe("Subcommand Routing Guard", () => {
+    it("safely handles interaction with missing subcommand", async () => {
+      const interaction = createMockChatInputInteraction({ subcommand: "" });
+      interaction.options.getSubcommand = vi.fn().mockReturnValue(null);
+
+      await workflowService.handleCommand(interaction);
+      expect(interaction.reply).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining("Please specify a valid subcommand"),
+          ephemeral: true,
+        }),
+      );
     });
   });
 

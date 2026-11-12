@@ -28,6 +28,7 @@ import {
 import {
   safeReply,
   safeDefer,
+  safeDeferUpdate,
   safeUpdate,
   createErrorPayload,
   createInfoPayload,
@@ -589,6 +590,8 @@ export class PanelWorkflowService {
     const check = await this.validateGuildAndPermissions(interaction, true);
     if (!check.valid) return;
 
+    await safeDeferUpdate(interaction);
+
     const { action, connectionId } = params;
     if (!action || !connectionId) {
       await safeUpdate(interaction, {
@@ -667,7 +670,11 @@ export class PanelWorkflowService {
 
   public async handleAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
     if (!interaction.guildId) {
-      await interaction.respond([]);
+      try {
+        if (!interaction.responded) await interaction.respond([]);
+      } catch {
+        // Token expired or cancelled
+      }
       return;
     }
 
@@ -683,15 +690,35 @@ export class PanelWorkflowService {
             name: `${c.name} (${c.panelUrl})`.slice(0, 100),
             value: c.name,
           }));
-        await interaction.respond(filtered);
-      } catch {
-        await interaction.respond([]);
+        if (!interaction.responded) {
+          await interaction.respond(filtered);
+        }
+      } catch (err) {
+        logger.debug({ err }, "Autocomplete failed or expired");
+        if (!interaction.responded) {
+          try {
+            await interaction.respond([]);
+          } catch {
+            // Expired autocomplete token
+          }
+        }
       }
     }
   }
 
   public async handleCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-    const subcommand = interaction.options.getSubcommand();
+    const subcommand = interaction.options.getSubcommand(false);
+
+    if (!subcommand) {
+      await safeReply(
+        interaction,
+        createErrorPayload(
+          "Please specify a valid subcommand (connect, list, status, settings, disconnect).",
+          true,
+        ),
+      );
+      return;
+    }
 
     switch (subcommand) {
       case "connect":
