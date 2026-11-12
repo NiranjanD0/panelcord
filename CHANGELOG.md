@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-12
+
+### Added
+
+- Dedicated `PanelConnectionService` in `src/services/pterodactyl/connectionService.ts` for panel connection verification.
+- Supported connection states: `CONNECTED`, `INVALID_CREDENTIALS`, `INSUFFICIENT_PERMISSIONS`, `PANEL_UNREACHABLE`, `TIMEOUT`, `INVALID_PANEL_URL`, `API_ERROR`.
+- Account normalization extracting ID, username, email, first name, last name, and language.
+- Deterministic redirect protection enforcing same-host origin integrity and preventing cross-origin credential forwarding during redirects.
+- Rejection of embedded credentials in panel base URLs (`user:pass@`).
+- Unit test suite (`tests/pterodactyl/connectionService.test.ts`) covering all 7 connection states, redirect handling, and credential safety (13 tests).
+
 ## [0.2.0] - 2026-11-12
 
 ### Added

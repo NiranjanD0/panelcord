@@ -20,6 +20,7 @@ import type {
 import { AccountEndpoint } from "./endpoints/account.js";
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
+export const MAX_REDIRECTS = 3;
 export const PTERODACTYL_ACCEPT_HEADER = "application/vnd.pterodactyl.v1+json, application/json";
 
 export function normalizePanelUrl(rawUrl: string): URL {
@@ -39,6 +40,14 @@ export function normalizePanelUrl(rawUrl: string): URL {
       `Unsupported protocol "${parsed.protocol}". Panel URL must use HTTP or HTTPS.`,
     );
   }
+
+  if (parsed.username || parsed.password) {
+    throw new PterodactylUrlError("Panel URL must not contain embedded user credentials.");
+  }
+
+  // Clear query and hash from base URL
+  parsed.search = "";
+  parsed.hash = "";
 
   let pathname = parsed.pathname.replace(/\/+$/, "");
   if (pathname.endsWith("/api/client")) {
@@ -124,12 +133,77 @@ export class PterodactylClient {
     }
 
     try {
-      const response = await fetch(targetUrl.toString(), {
-        method,
-        headers,
-        body: bodyPayload,
-        signal: AbortSignal.timeout(effectiveTimeout),
-      });
+      let currentUrl = targetUrl;
+      let currentMethod = method;
+      let currentBody = bodyPayload;
+      let redirectCount = 0;
+      let response: Response;
+
+      while (true) {
+        response = await fetch(currentUrl.toString(), {
+          method: currentMethod,
+          headers,
+          body: currentBody,
+          redirect: "manual",
+          signal: AbortSignal.timeout(effectiveTimeout),
+        });
+
+        // Safe redirect handling with cross-origin credential protection
+        if (
+          response.status >= 301 &&
+          response.status <= 308 &&
+          response.status !== 304 &&
+          response.status !== 305 &&
+          response.status !== 306
+        ) {
+          redirectCount++;
+          if (redirectCount > MAX_REDIRECTS) {
+            throw new PterodactylUrlError(
+              "Too many redirects encountered while connecting to Pterodactyl panel.",
+            );
+          }
+
+          const locationHeader = response.headers.get("location");
+          if (!locationHeader) {
+            break;
+          }
+
+          let redirectUrl: URL;
+          try {
+            redirectUrl = new URL(locationHeader, currentUrl);
+          } catch {
+            throw new PterodactylUrlError(`Invalid redirect Location URL: "${locationHeader}"`);
+          }
+
+          // Verify host and port match (or allow upgrade from http to https on same host)
+          const isSameHost =
+            redirectUrl.hostname.toLowerCase() === currentUrl.hostname.toLowerCase();
+          const isPortMatch = redirectUrl.port === currentUrl.port;
+          const isDowngrade = currentUrl.protocol === "https:" && redirectUrl.protocol === "http:";
+
+          if (!isSameHost || !isPortMatch || isDowngrade) {
+            throw new PterodactylUrlError(
+              "Prevented cross-origin redirect to protect API credentials.",
+            );
+          }
+
+          currentUrl = redirectUrl;
+
+          // Adjust method on redirect according to HTTP specs
+          if (
+            response.status === 303 ||
+            ((response.status === 301 || response.status === 302) && currentMethod === "POST")
+          ) {
+            currentMethod = "GET";
+            currentBody = undefined;
+            delete headers["Content-Type"];
+          }
+
+          continue;
+        }
+
+        break;
+      }
 
       if (response.status === 204) {
         return undefined as T;
