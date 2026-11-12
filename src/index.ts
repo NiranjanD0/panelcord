@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   } catch (dbError) {
     logger.warn(
       { error: dbError },
-      "Database initialization failed or skipped. Continuing bot startup...",
+      "Database initialization failed or PostgreSQL is unreachable. Bot will operate in database-degraded mode.",
     );
   }
 
@@ -28,11 +28,18 @@ async function main(): Promise<void> {
 
   // Graceful Shutdown Handler
   let isShuttingDown = false;
-  const handleShutdown = async (signal: string): Promise<void> => {
+  const handleShutdown = async (signal: string, exitCode = 0): Promise<void> => {
     if (isShuttingDown) return;
     isShuttingDown = true;
 
-    logger.info({ signal }, "Graceful shutdown initiated...");
+    logger.info({ signal, exitCode }, "Graceful shutdown initiated...");
+
+    // Force process exit if cleanup hangs
+    const forceExitTimeout = setTimeout(() => {
+      logger.error("Graceful shutdown timed out after 10s. Forcing exit.");
+      process.exit(exitCode || 1);
+    }, 10000);
+    forceExitTimeout.unref();
 
     try {
       client.destroy();
@@ -47,20 +54,27 @@ async function main(): Promise<void> {
       logger.error({ error: dbErr }, "Error disconnecting database during shutdown.");
     }
 
-    logger.info("PanelCord shutdown complete. Goodbye!");
-    process.exit(0);
+    logger.info({ exitCode }, "PanelCord shutdown complete. Goodbye!");
+    process.exit(exitCode);
   };
 
-  process.on("SIGINT", () => void handleShutdown("SIGINT"));
-  process.on("SIGTERM", () => void handleShutdown("SIGTERM"));
+  process.on("SIGINT", () => void handleShutdown("SIGINT", 0));
+  process.on("SIGTERM", () => void handleShutdown("SIGTERM", 0));
 
   process.on("unhandledRejection", (reason: unknown) => {
-    logger.error({ reason }, "Unhandled promise rejection detected.");
+    logger.fatal(
+      { reason },
+      "Unhandled promise rejection detected. Initiating graceful shutdown to prevent unsafe process state...",
+    );
+    void handleShutdown("unhandledRejection", 1);
   });
 
   process.on("uncaughtException", (error: Error) => {
-    logger.fatal({ error }, "Uncaught exception detected. Exiting...");
-    void handleShutdown("uncaughtException");
+    logger.fatal(
+      { error },
+      "Uncaught exception detected. Initiating graceful shutdown to prevent unsafe process state...",
+    );
+    void handleShutdown("uncaughtException", 1);
   });
 
   // Login to Discord Gateway

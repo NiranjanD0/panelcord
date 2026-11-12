@@ -3,6 +3,7 @@ import type { Interaction } from "discord.js";
 import type { Event } from "../types/event.js";
 import type { ExtendedClient } from "../lib/client.js";
 import { interactionManager } from "../interactions/index.js";
+import { DatabaseUnavailableError } from "../database/index.js";
 import { logger } from "../utils/logger.js";
 
 export const interactionCreateEvent: Event<Events.InteractionCreate> = {
@@ -42,7 +43,9 @@ export const interactionCreateEvent: Event<Events.InteractionCreate> = {
         );
 
         const errorMessage =
-          "⚠️ An error occurred while executing this command. Please try again later.";
+          error instanceof DatabaseUnavailableError
+            ? "⚠️ Database service is currently unavailable. Please try again later."
+            : "⚠️ An error occurred while executing this command. Please try again later.";
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp({ content: errorMessage, ephemeral: true }).catch(() => {});
         } else {

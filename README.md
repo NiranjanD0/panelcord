@@ -27,6 +27,8 @@ src/
 └── index.ts          # Main bot entry point and graceful shutdown
 ```
 
+_For details on the decision to use modular vanilla `discord.js` over opinionated frameworks like Sapphire, see [ADR 0001](docs/adr/0001-architecture-vanilla-discordjs.md)._
+
 ---
 
 ## Features (Boilerplate)

@@ -21,6 +21,7 @@ export const aboutCommand: Command = {
         { name: "Uptime", value: info.uptimeFormatted, inline: true },
         { name: "Servers", value: `${info.guildCount}`, inline: true },
         { name: "Memory Usage", value: `${info.memoryUsageMb} MB`, inline: true },
+        { name: "Database", value: info.databaseStatus, inline: true },
       )
       .setFooter({ text: "PanelCord • Pterodactyl Discord Manager" })
       .setTimestamp();

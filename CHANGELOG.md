@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-11-12
+
+### Added
+
+- Architectural Decision Record ([ADR 0001](docs/adr/0001-architecture-vanilla-discordjs.md)) documenting the decision to retain modular vanilla `discord.js` v14 over Sapphire Framework.
+- `DatabaseUnavailableError` class and connection state tracking (`isDatabaseConnected`, `assertDatabaseAvailable`) in database module.
+- Live database health status reporting in `/about` command embed via `BotInfoService`.
+- 10-second unref force-exit safety timer for process shutdown handling.
+
+### Changed
+
+- `unhandledRejection` and `uncaughtException` process listeners now initiate graceful shutdown with exit code `1` rather than continuing in an unsafe process state or exiting with code 0.
+- Command execution catches `DatabaseUnavailableError` to provide clear user-friendly ephemeral notifications without exposing raw database errors or stack traces.
+
+### Fixed
+
+- Created missing `.dockerignore` to keep development artifacts, sensitive environment files, and `node_modules` out of Docker build contexts.
+- Hardened Docker runner image stage permissions with `RUN chown -R node:node /app`.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

@@ -30,7 +30,7 @@ vi.mock("../src/database/generated/client.ts", () => {
   };
 });
 
-describe("Database Lifecycle (connectDatabase & disconnectDatabase)", () => {
+describe("Database Lifecycle & Availability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -38,24 +38,38 @@ describe("Database Lifecycle (connectDatabase & disconnectDatabase)", () => {
   it("connects to PostgreSQL successfully when pool.connect succeeds", async () => {
     mockPool.connect.mockResolvedValueOnce(mockClient);
 
-    const { connectDatabase } = await import("../src/database/index.js");
+    const { connectDatabase, isDatabaseConnected, assertDatabaseAvailable } =
+      await import("../src/database/index.js");
+
     await expect(connectDatabase()).resolves.toBeUndefined();
     expect(mockPool.connect).toHaveBeenCalled();
     expect(mockClient.release).toHaveBeenCalled();
+    expect(isDatabaseConnected()).toBe(true);
+    expect(() => assertDatabaseAvailable()).not.toThrow();
   });
 
-  it("throws when pool.connect fails", async () => {
+  it("throws and marks database disconnected when pool.connect fails", async () => {
     const error = new Error("Connection failed");
     mockPool.connect.mockRejectedValueOnce(error);
 
-    const { connectDatabase } = await import("../src/database/index.js");
+    const {
+      connectDatabase,
+      isDatabaseConnected,
+      assertDatabaseAvailable,
+      DatabaseUnavailableError,
+    } = await import("../src/database/index.js");
+
     await expect(connectDatabase()).rejects.toThrow("Connection failed");
+    expect(isDatabaseConnected()).toBe(false);
+    expect(() => assertDatabaseAvailable()).toThrow(DatabaseUnavailableError);
   });
 
   it("disconnects both prisma and pg pool during disconnectDatabase", async () => {
-    const { disconnectDatabase } = await import("../src/database/index.js");
+    const { disconnectDatabase, isDatabaseConnected } = await import("../src/database/index.js");
+
     await expect(disconnectDatabase()).resolves.toBeUndefined();
     expect(mockPrisma.$disconnect).toHaveBeenCalled();
     expect(mockPool.end).toHaveBeenCalled();
+    expect(isDatabaseConnected()).toBe(false);
   });
 });

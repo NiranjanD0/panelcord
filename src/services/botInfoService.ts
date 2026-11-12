@@ -2,6 +2,7 @@ import process from "node:process";
 import { version as djsVersion } from "discord.js";
 import type { Client } from "discord.js";
 import { APP_NAME, APP_VERSION, APP_DESCRIPTION } from "../config/constants.js";
+import { isDatabaseConnected } from "../database/index.js";
 
 export interface BotInfo {
   name: string;
@@ -13,6 +14,7 @@ export interface BotInfo {
   uptimeFormatted: string;
   guildCount: number;
   memoryUsageMb: number;
+  databaseStatus: "Connected" | "Degraded / Offline";
 }
 
 export function formatUptime(totalSeconds: number): string {
@@ -45,6 +47,7 @@ export class BotInfoService {
       uptimeFormatted: formatUptime(uptimeSeconds),
       guildCount: client.guilds.cache.size,
       memoryUsageMb: Math.round(memory * 100) / 100,
+      databaseStatus: isDatabaseConnected() ? "Connected" : "Degraded / Offline",
     };
   }
 }

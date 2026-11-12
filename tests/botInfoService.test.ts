@@ -10,7 +10,7 @@ describe("BotInfoService", () => {
     expect(formatUptime(90065)).toBe("1d 1h 1m 5s");
   });
 
-  it("extracts bot info from mock client", () => {
+  it("extracts bot info from mock client including database status", () => {
     const mockClient = {
       uptime: 60000,
       guilds: {
@@ -22,9 +22,10 @@ describe("BotInfoService", () => {
 
     const info = BotInfoService.getBotInfo(mockClient);
     expect(info.name).toBe("PanelCord");
-    expect(info.version).toBe("0.1.0");
+    expect(info.version).toBe("0.1.1");
     expect(info.uptimeSeconds).toBe(60);
     expect(info.guildCount).toBe(5);
     expect(info.nodeVersion).toBe(process.version);
+    expect(typeof info.databaseStatus).toBe("string");
   });
 });
