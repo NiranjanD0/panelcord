@@ -72,6 +72,7 @@ export class PanelConnectionService {
         apiKey: params.apiKey,
         timeoutMs: params.timeoutMs,
         allowPrivateNetworks: this.allowPrivateNetworks,
+        retry: { maxRetries: 0 },
       });
     } catch (clientInitError) {
       if (clientInitError instanceof PterodactylUrlError) {

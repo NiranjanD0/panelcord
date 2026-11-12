@@ -10,12 +10,14 @@ import {
   PterodactylTimeoutError,
   PterodactylInvalidResponseError,
   PterodactylUrlError,
+  PterodactylAbortError,
 } from "./errors/index.js";
 import type {
   PterodactylClientConfig,
   HttpMethod,
   RequestOptions,
   PterodactylErrorResponse,
+  RetryConfig,
 } from "./types/index.js";
 import { AccountEndpoint } from "./endpoints/account.js";
 import { ServersEndpoint } from "./endpoints/servers.js";
@@ -24,6 +26,18 @@ import {
   isBlockedHost,
   type UrlValidationOptions,
 } from "./security.js";
+import {
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_BASE_DELAY_MS,
+  DEFAULT_MAX_DELAY_MS,
+  DEFAULT_RETRYABLE_STATUS_CODES,
+  parseRetryAfter,
+  isIdempotentMethod,
+  isRetryableStatusCode,
+  calculateBackoff,
+  sleep,
+  PanelConcurrencyManager,
+} from "./resilience/index.js";
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const MAX_REDIRECTS = 3;
@@ -40,8 +54,15 @@ export class PterodactylClient {
   public readonly account: AccountEndpoint;
   public readonly servers: ServersEndpoint;
   public readonly allowPrivateNetworks: boolean;
+  public readonly retryConfig: Required<RetryConfig>;
+  public readonly concurrencyManager: PanelConcurrencyManager;
 
-  constructor(config: PterodactylClientConfig & { allowPrivateNetworks?: boolean }) {
+  constructor(
+    config: PterodactylClientConfig & {
+      allowPrivateNetworks?: boolean;
+      concurrencyManager?: PanelConcurrencyManager;
+    },
+  ) {
     if (!config.apiKey || typeof config.apiKey !== "string" || config.apiKey.trim().length === 0) {
       throw new PterodactylAuthError("API key must be a non-empty string.");
     }
@@ -52,6 +73,17 @@ export class PterodactylClient {
     });
     this.apiKey = config.apiKey.trim();
     this.defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+    this.retryConfig = {
+      maxRetries: config.retry?.maxRetries ?? DEFAULT_MAX_RETRIES,
+      baseDelayMs: config.retry?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS,
+      maxDelayMs: config.retry?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
+      jitter: config.retry?.jitter ?? true,
+      retryableStatusCodes: config.retry?.retryableStatusCodes ?? DEFAULT_RETRYABLE_STATUS_CODES,
+    };
+
+    this.concurrencyManager =
+      config.concurrencyManager ?? new PanelConcurrencyManager(config.concurrency);
     this.account = new AccountEndpoint(this);
     this.servers = new ServersEndpoint(this);
   }
@@ -98,7 +130,101 @@ export class PterodactylClient {
     return targetUrl;
   }
 
+  /**
+   * Executes an API request protected by per-panel concurrency queueing and exponential retries.
+   */
   public async request<T>(method: HttpMethod, path: string, options?: RequestOptions): Promise<T> {
+    return this.concurrencyManager.acquire(
+      this.sanitizedBaseUrl,
+      () => this.executeWithRetry<T>(method, path, options),
+      options?.signal,
+      options?.concurrency,
+    );
+  }
+
+  private async executeWithRetry<T>(
+    method: HttpMethod,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<T> {
+    const effectiveRetryConfig: Required<RetryConfig> = {
+      maxRetries: options?.retry?.maxRetries ?? this.retryConfig.maxRetries,
+      baseDelayMs: options?.retry?.baseDelayMs ?? this.retryConfig.baseDelayMs,
+      maxDelayMs: options?.retry?.maxDelayMs ?? this.retryConfig.maxDelayMs,
+      jitter: options?.retry?.jitter ?? this.retryConfig.jitter,
+      retryableStatusCodes:
+        options?.retry?.retryableStatusCodes ?? this.retryConfig.retryableStatusCodes,
+    };
+
+    const isIdempotent = isIdempotentMethod(method);
+    const allowRetry = isIdempotent || options?.retryUnsafeMethods === true;
+    const maxRetries = allowRetry ? effectiveRetryConfig.maxRetries : 0;
+
+    let attempt = 0;
+    while (true) {
+      if (options?.signal?.aborted) {
+        throw new PterodactylAbortError("Request aborted by caller.", {
+          attemptCount: attempt + 1,
+          apiKeyToRedact: this.apiKey,
+          cause: options.signal.reason,
+        });
+      }
+
+      try {
+        return await this.executeSingleRequest<T>(method, path, options);
+      } catch (err) {
+        const attemptCount = attempt + 1;
+
+        // If cancelled by caller, never retry
+        if (options?.signal?.aborted || err instanceof PterodactylAbortError) {
+          if (err instanceof PterodactylError) {
+            err.attemptCount = attemptCount;
+            err.isRetryable = false;
+          }
+          throw err;
+        }
+
+        const isRetryable =
+          allowRetry && this.isErrorRetryable(err, effectiveRetryConfig.retryableStatusCodes);
+
+        if (!isRetryable || attempt >= maxRetries) {
+          if (err instanceof PterodactylError) {
+            err.attemptCount = attemptCount;
+            err.isRetryable = isRetryable;
+          }
+          throw err;
+        }
+
+        // Retry permitted: extract server Retry-After delay if present
+        const retryAfterSeconds =
+          err instanceof PterodactylRateLimitError ? err.retryAfterSeconds : undefined;
+
+        const delayMs = calculateBackoff(attempt, effectiveRetryConfig, retryAfterSeconds);
+
+        await sleep(delayMs, options?.signal);
+        attempt++;
+      }
+    }
+  }
+
+  private isErrorRetryable(err: unknown, retryableStatuses: number[]): boolean {
+    if (err instanceof PterodactylRateLimitError) {
+      return true;
+    }
+    if (err instanceof PterodactylServerError) {
+      return isRetryableStatusCode(err.statusCode, retryableStatuses);
+    }
+    if (err instanceof PterodactylNetworkError || err instanceof PterodactylTimeoutError) {
+      return true;
+    }
+    return false;
+  }
+
+  private async executeSingleRequest<T>(
+    method: HttpMethod,
+    path: string,
+    options?: RequestOptions,
+  ): Promise<T> {
     const targetUrl = this.buildRequestUrl(path, options?.query);
     const effectiveTimeout = options?.timeoutMs ?? this.defaultTimeoutMs;
 
@@ -114,6 +240,11 @@ export class PterodactylClient {
       bodyPayload = JSON.stringify(options.body);
     }
 
+    const timeoutSignal = AbortSignal.timeout(effectiveTimeout);
+    const combinedSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+
     try {
       let currentUrl = targetUrl;
       let currentMethod = method;
@@ -128,7 +259,7 @@ export class PterodactylClient {
           headers,
           body: currentBody,
           redirect: "manual",
-          signal: AbortSignal.timeout(effectiveTimeout),
+          signal: combinedSignal,
         });
 
         // Safe redirect handling with loop detection & cross-origin credential protection
@@ -171,7 +302,7 @@ export class PterodactylClient {
             throw new PterodactylUrlError("Prevented redirect containing embedded credentials.");
           }
 
-          // Reject redirect to blocked hosts (cloud metadata, private networks unless allowed, etc.)
+          // Reject redirect to blocked hosts
           if (
             isBlockedHost(redirectUrl.hostname, {
               allowPrivateNetworks: this.allowPrivateNetworks,
@@ -276,12 +407,9 @@ export class PterodactylClient {
           });
         case 429: {
           const retryAfterHeader = response.headers.get("retry-after");
-          const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader, 10) : undefined;
+          const retryAfterSeconds = parseRetryAfter(retryAfterHeader);
           throw new PterodactylRateLimitError(primaryDetail, {
-            retryAfterSeconds:
-              retryAfterSeconds !== undefined && !isNaN(retryAfterSeconds)
-                ? retryAfterSeconds
-                : undefined,
+            retryAfterSeconds,
             errors: errorDetails,
             apiKeyToRedact: this.apiKey,
           });
@@ -305,10 +433,23 @@ export class PterodactylClient {
         throw err;
       }
 
+      if (options?.signal?.aborted) {
+        throw new PterodactylAbortError("Request cancelled by caller.", {
+          apiKeyToRedact: this.apiKey,
+          cause: options.signal.reason,
+        });
+      }
+
       if (err instanceof Error) {
-        if (err.name === "TimeoutError" || err.name === "AbortError") {
+        if (err.name === "TimeoutError" || timeoutSignal.aborted) {
           throw new PterodactylTimeoutError(`Request timed out after ${effectiveTimeout}ms.`, {
             timeoutMs: effectiveTimeout,
+            apiKeyToRedact: this.apiKey,
+            cause: err,
+          });
+        }
+        if (err.name === "AbortError") {
+          throw new PterodactylAbortError("Request was cancelled.", {
             apiKeyToRedact: this.apiKey,
             cause: err,
           });
@@ -329,6 +470,10 @@ export class PterodactylClient {
     return this.request<T>("GET", path, options);
   }
 
+  public head<T>(path: string, options?: Omit<RequestOptions, "body">): Promise<T> {
+    return this.request<T>("HEAD", path, options);
+  }
+
   public post<T>(path: string, body?: unknown, options?: Omit<RequestOptions, "body">): Promise<T> {
     return this.request<T>("POST", path, { ...options, body });
   }
@@ -347,5 +492,9 @@ export class PterodactylClient {
 
   public delete<T>(path: string, options?: Omit<RequestOptions, "body">): Promise<T> {
     return this.request<T>("DELETE", path, options);
+  }
+
+  public options<T>(path: string, options?: Omit<RequestOptions, "body">): Promise<T> {
+    return this.request<T>("OPTIONS", path, options);
   }
 }

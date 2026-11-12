@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-12
+
+### Added
+
+- **Pterodactyl API Resilience & Rate Limit Handling**:
+  - Implemented `parseRetryAfter` in `src/services/pterodactyl/resilience/retry.ts` supporting both delay-seconds and HTTP-date formats (RFC 7231 / RFC 9110), respecting server delays with fallback to exponential backoff when missing or malformed.
+  - Implemented `calculateBackoff` providing configurable exponential backoff (`baseDelayMs * 2^attempt`) with randomized jitter bounded within [0.5, 1.0] and maximum delay capping (`maxDelayMs`).
+  - Implemented `sleep` with cancellable `AbortSignal` support, immediately aborting backoff delays when requested by the caller.
+  - Enriched `PterodactylError` hierarchy with `attemptCount`, `retryAfterSeconds`, and `isRetryable`, maintaining credential redaction across all error types.
+  - Added specialized error classes `PterodactylAbortError` and `PterodactylQueueFullError`.
+- **Request Safety & Method Idempotency**:
+  - Restricted automated retries strictly to safe/idempotent HTTP methods (`GET`, `HEAD`, `OPTIONS`) by default.
+  - Guarded mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`) against blind retries, allowing retries only when explicitly opted in via `retryUnsafeMethods: true`.
+  - Automatic retries targeted exclusively at transient failures (HTTP 429, 502, 503, 504, connection drops, and request timeouts). Permanent failures (HTTP 400, 401, 403, 404, 422, 500, non-JSON responses, URL validation failures) fail immediately on attempt 1.
+- **Per-Panel Concurrency Management**:
+  - Implemented `PanelConcurrencyManager` in `src/services/pterodactyl/resilience/concurrency.ts` to manage request concurrency (`maxConcurrent: 5`) and bounded queuing (`maxQueueSize: 100`) isolated per panel origin.
+  - Ensures slow or unresponsive panels never block or delay operations targeting other panels.
+  - Supports `AbortSignal` cancellation for queued requests, immediately removing them from the pending queue and rejecting with `PterodactylAbortError` without consuming concurrency capacity.
+- **Automated Test Suite**:
+  - Added 38 automated tests in `tests/pterodactyl/resilience.test.ts` covering Retry-After parsing, exponential backoff, jitter distribution, retryable status codes, method idempotency, concurrency slot limits, queue exhaustion, per-panel isolation, cancellation during queueing and sleep, and credential redaction.
+
 ## [0.5.1] - 2026-11-12
 
 ### Fixed

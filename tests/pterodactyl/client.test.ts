@@ -334,7 +334,7 @@ describe("Pterodactyl API Client Foundation", () => {
         ),
       );
 
-      const error = await client.get("/api/client").catch((e) => e);
+      const error = await client.get("/api/client", { retry: { maxRetries: 0 } }).catch((e) => e);
       expect(error).toBeInstanceOf(PterodactylRateLimitError);
       expect((error as PterodactylRateLimitError).retryAfterSeconds).toBe(60);
       expect((error as PterodactylRateLimitError).statusCode).toBe(429);
@@ -352,10 +352,12 @@ describe("Pterodactyl API Client Foundation", () => {
 
       await expect(client.get("/api/client")).rejects.toThrow(PterodactylServerError);
 
-      globalThis.fetch = vi.fn().mockResolvedValue(
-        new Response("Bad Gateway", {
-          status: 502,
-        }),
+      globalThis.fetch = vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response("Bad Gateway", {
+            status: 502,
+          }),
+        ),
       );
 
       await expect(client.get("/api/client")).rejects.toThrow(PterodactylServerError);

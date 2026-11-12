@@ -5,4 +5,5 @@ export * from "./endpoints/index.js";
 export * from "./connectionService.js";
 export * from "./serverDiscoveryService.js";
 export * from "./serverDetailService.js";
+export * from "./resilience/index.js";
 export * from "./security.js";

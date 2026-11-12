@@ -171,6 +171,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const service = new ServerDetailService(client);
 
@@ -219,6 +220,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const server = await ServerDetailService.getServerDetails(client, "subuser01");
 
@@ -238,6 +240,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const server = await ServerDetailService.getServerDetails(client, "subuser02");
 
@@ -258,6 +261,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const server = await ServerDetailService.getServerDetails(client, "subuser03");
 
@@ -278,6 +282,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const service = new ServerDetailService(client);
 
@@ -296,6 +301,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerDetails(client, "forbidden01")).rejects.toThrow(
@@ -313,6 +319,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerDetails(client, "0d89d908")).rejects.toThrow(
@@ -334,6 +341,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerDetails(client, "0d89d908")).rejects.toThrow(
@@ -352,6 +360,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerDetails(client, "0d89d908")).rejects.toThrow(
@@ -375,6 +384,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
       const service = new ServerDetailService(client);
 
@@ -420,6 +430,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const unlimitedLimits: NormalizedServerLimits = {
@@ -469,6 +480,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const resources = await ServerDetailService.getServerResources(client, "0d89d908");
@@ -519,6 +531,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const resources = await ServerDetailService.getServerResources(client, "0d89d908");
@@ -540,6 +553,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerResources(client, "0d89d908")).rejects.toThrow(
@@ -564,6 +578,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const combined = await ServerDetailService.getServerWithResources(client, "0d89d908");
@@ -596,6 +611,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const combined = await ServerDetailService.getServerWithResources(client, "0d89d908");
@@ -643,6 +659,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
@@ -667,6 +684,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
@@ -689,6 +707,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
@@ -711,6 +730,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
@@ -729,6 +749,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
@@ -751,6 +772,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(
@@ -775,6 +797,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const combined = await ServerDetailService.getServerWithResources(client, "suspended01");
@@ -801,6 +824,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const combined = await ServerDetailService.getServerWithResources(client, "installing01");
@@ -825,6 +849,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const combined = await ServerDetailService.getServerWithResources(client, "transfer01");

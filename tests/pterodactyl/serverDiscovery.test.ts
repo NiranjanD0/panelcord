@@ -218,6 +218,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client);
@@ -257,6 +258,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client);
@@ -293,6 +295,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client);
@@ -348,6 +351,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client, { perPage: 2 });
@@ -389,6 +393,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client, {
@@ -444,6 +449,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const result = await ServerDiscoveryService.discoverServers(client);
@@ -478,6 +484,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       // Enforce maxPages of 3
@@ -534,6 +541,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       // Default maxPages is 50; service must terminate after exactly 2 pages
@@ -558,6 +566,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -579,6 +588,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -603,6 +613,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -627,6 +638,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -670,6 +682,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -690,6 +703,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
@@ -716,6 +730,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       try {
@@ -733,6 +748,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       const url = validatePaginationUrl("https://panel.example.com/api/client?page=2", client);
@@ -743,6 +759,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       expect(() =>
@@ -768,6 +785,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       expect(() =>
@@ -817,6 +835,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
+        retry: { maxRetries: 0 },
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(

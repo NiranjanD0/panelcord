@@ -58,12 +58,12 @@ export class PterodactylNotFoundError extends PterodactylError {
 }
 
 export class PterodactylRateLimitError extends PterodactylError {
-  public readonly retryAfterSeconds?: number;
-
   constructor(
     message = "Rate limit exceeded: Too many requests sent to the Pterodactyl panel.",
     options?: {
       retryAfterSeconds?: number;
+      attemptCount?: number;
+      isRetryable?: boolean;
       errors?: PterodactylApiErrorDetail[];
       apiKeyToRedact?: string;
       cause?: unknown;
@@ -74,9 +74,11 @@ export class PterodactylRateLimitError extends PterodactylError {
       errors: options?.errors,
       apiKeyToRedact: options?.apiKeyToRedact,
       cause: options?.cause,
+      attemptCount: options?.attemptCount,
+      retryAfterSeconds: options?.retryAfterSeconds,
+      isRetryable: options?.isRetryable,
     });
     this.name = "PterodactylRateLimitError";
-    this.retryAfterSeconds = options?.retryAfterSeconds;
   }
 }
 
@@ -177,5 +179,41 @@ export class PterodactylUrlError extends PterodactylError {
   constructor(message = "Invalid panel URL: Must be a valid HTTP or HTTPS URL.") {
     super(message);
     this.name = "PterodactylUrlError";
+  }
+}
+
+export class PterodactylAbortError extends PterodactylError {
+  constructor(
+    message = "Request aborted: The operation was cancelled.",
+    options?: {
+      attemptCount?: number;
+      apiKeyToRedact?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, {
+      apiKeyToRedact: options?.apiKeyToRedact,
+      cause: options?.cause,
+      attemptCount: options?.attemptCount,
+      isRetryable: false,
+    });
+    this.name = "PterodactylAbortError";
+  }
+}
+
+export class PterodactylQueueFullError extends PterodactylError {
+  constructor(
+    message = "Request queue full: The concurrency limit queue for this panel has reached capacity.",
+    options?: {
+      apiKeyToRedact?: string;
+      cause?: unknown;
+    },
+  ) {
+    super(message, {
+      apiKeyToRedact: options?.apiKeyToRedact,
+      cause: options?.cause,
+      isRetryable: false,
+    });
+    this.name = "PterodactylQueueFullError";
   }
 }

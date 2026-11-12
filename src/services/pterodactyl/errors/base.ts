@@ -5,19 +5,24 @@ export interface PterodactylApiErrorDetail {
   meta?: Record<string, unknown>;
 }
 
+export interface PterodactylErrorOptions {
+  statusCode?: number;
+  errors?: PterodactylApiErrorDetail[];
+  apiKeyToRedact?: string;
+  cause?: unknown;
+  attemptCount?: number;
+  retryAfterSeconds?: number;
+  isRetryable?: boolean;
+}
+
 export class PterodactylError extends Error {
   public readonly statusCode?: number;
   public readonly errors: PterodactylApiErrorDetail[];
+  public attemptCount?: number;
+  public retryAfterSeconds?: number;
+  public isRetryable?: boolean;
 
-  constructor(
-    message: string,
-    options?: {
-      statusCode?: number;
-      errors?: PterodactylApiErrorDetail[];
-      apiKeyToRedact?: string;
-      cause?: unknown;
-    },
-  ) {
+  constructor(message: string, options?: PterodactylErrorOptions) {
     const sanitizedMessage = PterodactylError.sanitizeMessage(message, options?.apiKeyToRedact);
     super(sanitizedMessage);
     this.name = "PterodactylError";
@@ -25,6 +30,9 @@ export class PterodactylError extends Error {
     this.errors = options?.errors
       ? PterodactylError.sanitizeErrors(options.errors, options?.apiKeyToRedact)
       : [];
+    this.attemptCount = options?.attemptCount;
+    this.retryAfterSeconds = options?.retryAfterSeconds;
+    this.isRetryable = options?.isRetryable;
 
     if (options?.cause) {
       this.cause = options.cause;
