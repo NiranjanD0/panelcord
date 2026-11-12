@@ -4,4 +4,5 @@ export * from "./errors/index.js";
 export * from "./endpoints/index.js";
 export * from "./connectionService.js";
 export * from "./serverDiscoveryService.js";
+export * from "./serverDetailService.js";
 export * from "./security.js";

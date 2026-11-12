@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-11-12
+
+### Added
+
+- **Server Details & Resource Monitoring Endpoints**:
+  - Implemented `getServer` in `src/services/pterodactyl/endpoints/servers.ts` for `GET /api/client/servers/{server}`, retrieving full server configuration metadata, ownership, user permissions, resource limits, and feature limits.
+  - Implemented `getServerResources` in `src/services/pterodactyl/endpoints/servers.ts` for `GET /api/client/servers/{server}/resources`, retrieving container process state, CPU utilization percentage, memory usage, disk usage, network RX/TX bytes, and container uptime.
+  - Added strict server identifier validation (`validateServerIdentifier`) enforcing alphanumeric, dash, and underscore identifiers (1-64 characters) to guard against path traversal, query injection, and SSRF attacks before network requests are dispatched.
+- **Server Detail Service (`ServerDetailService`)**:
+  - Implemented `ServerDetailService` in `src/services/pterodactyl/serverDetailService.ts` providing methods `getServerDetails`, `getServerResources`, and `getServerWithResources`.
+  - Added `normalizeServerResources` to normalize raw daemon stats, handling nullable/missing metrics, non-finite values, and correlating server limits into byte representations.
+  - Handled Pterodactyl's zero-limit convention where `memory: 0`, `disk: 0`, or `cpu: 0` indicates unlimited resources (`isMemoryUnlimited`, `isDiskUnlimited`, `isCpuUnlimited`).
+  - Separated server metadata and live container power states, preventing confusion between container process states (`"running"`, `"starting"`, `"stopping"`, `"offline"`) and server lifecycle states (`isSuspended`, `isInstalling`, `isTransferring`).
+  - Implemented resilient fallback in `getServerWithResources` when the remote Wings daemon is unreachable (HTTP 502/504 `DaemonConnectionException`), preserving server configuration details while marking resources as unavailable (`resourcesUnavailableReason: "daemon_unavailable"`).
+- **Telemetry Formatting Helpers**:
+  - Added `formatBytes`, `formatUptime`, and `formatCpu` in `src/services/pterodactyl/types/resources.ts` for clean human-readable representations (binary KiB/MiB/GiB/TiB or decimal KB/MB/GB/TB, readable durations "1d 2h 3m 4s", formatted percentages) without fabricating omitted data.
+- **Automated Test Suite**:
+  - Added 37 automated tests in `tests/pterodactyl/serverDetails.test.ts` covering server details retrieval, live resource monitoring, zero-limit handling, telemetry unit formatting, path traversal/injection guards, server states (suspended, installing, transferring, offline), daemon connection errors, and permission failures.
+
 ## [0.4.1] - 2026-11-12
 
 ### Fixed
