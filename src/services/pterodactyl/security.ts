@@ -10,9 +10,18 @@ const BLOCKED_HOSTNAMES = new Set([
 ]);
 
 /**
- * Checks if an IP or hostname is a cloud metadata, link-local, or invalid broadcast address.
- * By default, permits private RFC 1918 and loopback addresses for self-hosted home-lab panels,
- * but strictly blocks cloud metadata and link-local ranges.
+ * Checks if an IP or hostname is a cloud metadata, link-local, invalid broadcast,
+ * or private/loopback network address.
+ *
+ * Security Posture:
+ * - Cloud metadata (169.254.169.254, metadata.google.internal, fd00:ec2::254, etc.),
+ *   link-local (169.254.0.0/16, fe80::/10), and broadcast (0.0.0.0, 255.255.255.255)
+ *   are UNCONDITIONALLY blocked at all times.
+ * - Private networks (RFC 1918 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, loopback 127.0.0.0/8,
+ *   localhost, ::1, and IPv6 unique local fc00::/7) are BLOCKED BY DEFAULT (default-deny)
+ *   to protect multi-tenant centrally hosted bots from SSRF attacks against internal services.
+ * - Legitimate self-hosted home-lab deployments can opt in to private network access
+ *   by explicitly setting `allowPrivateNetworks: true`.
  */
 export function isBlockedHost(
   hostname: string,
@@ -23,28 +32,30 @@ export function isBlockedHost(
     .trim()
     .replace(/^\[|\]$/g, "");
 
-  // 1. Direct Cloud Metadata match
+  // 1. Direct Cloud Metadata match (NEVER ALLOWED)
   if (BLOCKED_HOSTNAMES.has(cleanHost)) {
     return true;
   }
 
-  // 2. Unspecified / Broadcast addresses
+  // 2. Unspecified / Broadcast addresses (NEVER ALLOWED)
   if (cleanHost === "0.0.0.0" || cleanHost === "::" || cleanHost === "255.255.255.255") {
     return true;
   }
 
-  // 3. IPv4 Link-Local / Cloud Metadata range (169.254.0.0/16)
+  // 3. IPv4 Link-Local / Cloud Metadata range (169.254.0.0/16) (NEVER ALLOWED)
   if (cleanHost.startsWith("169.254.")) {
     return true;
   }
 
-  // 4. IPv6 Link-Local (fe80::/10) and Multicast (ff00::/8)
+  // 4. IPv6 Link-Local (fe80::/10) and Multicast (ff00::/8) (NEVER ALLOWED)
   if (cleanHost.startsWith("fe80:") || cleanHost.startsWith("ff")) {
     return true;
   }
 
-  // 5. If private networks are explicitly disallowed (e.g. strict public multi-tenant mode)
-  if (options?.allowPrivateNetworks === false) {
+  // 5. Private networks and loopback: DEFAULT-DENY
+  // Only permitted if allowPrivateNetworks is explicitly set to true.
+  const allowPrivate = options?.allowPrivateNetworks === true;
+  if (!allowPrivate) {
     // Loopback
     if (cleanHost === "localhost" || cleanHost.startsWith("127.") || cleanHost === "::1") {
       return true;

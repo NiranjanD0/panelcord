@@ -1,4 +1,4 @@
 export const APP_NAME = "PanelCord";
-export const APP_VERSION = "0.3.1";
+export const APP_VERSION = "0.3.2";
 export const APP_DESCRIPTION =
   "Discord bot designed to manage Pterodactyl game servers through Discord.";

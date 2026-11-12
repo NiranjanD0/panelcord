@@ -39,9 +39,24 @@ describe("Pterodactyl API Client Foundation", () => {
       expect(url.pathname).toBe("/");
     });
 
-    it("accepts valid HTTP panel URLs", () => {
-      const url = normalizePanelUrl("http://localhost:8080/");
+    it("accepts valid public HTTP panel URLs", () => {
+      const url = normalizePanelUrl("http://panel.example.com:8080/");
+      expect(url.origin).toBe("http://panel.example.com:8080");
+    });
+
+    it("denies loopback and private network URLs by default", () => {
+      expect(() => normalizePanelUrl("http://localhost:8080/")).toThrow(PterodactylUrlError);
+      expect(() => normalizePanelUrl("http://192.168.1.50:8080/")).toThrow(PterodactylUrlError);
+    });
+
+    it("allows loopback and private network URLs when allowPrivateNetworks is explicitly true", () => {
+      const url = normalizePanelUrl("http://localhost:8080/", { allowPrivateNetworks: true });
       expect(url.origin).toBe("http://localhost:8080");
+
+      const lanUrl = normalizePanelUrl("http://192.168.1.50:8080/", {
+        allowPrivateNetworks: true,
+      });
+      expect(lanUrl.origin).toBe("http://192.168.1.50:8080");
     });
 
     it("strips trailing slashes and accidental /api or /api/client paths", () => {

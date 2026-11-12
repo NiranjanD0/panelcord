@@ -16,8 +16,29 @@ import {
 } from "./types/index.js";
 
 export class PanelConnectionService {
+  public readonly allowPrivateNetworks: boolean;
+
+  /**
+   * Initializes the PanelConnectionService.
+   *
+   * @param options.allowPrivateNetworks Explicit opt-in for private network access (RFC 1918, loopback).
+   * Defaults to false (or environment variable PTERODACTYL_ALLOW_PRIVATE_NETWORKS) for
+   * multi-tenant security, ensuring untrusted Discord users cannot probe internal networks.
+   */
+  constructor(options?: { allowPrivateNetworks?: boolean }) {
+    if (options?.allowPrivateNetworks !== undefined) {
+      this.allowPrivateNetworks = options.allowPrivateNetworks;
+    } else {
+      const envVal = process.env.PTERODACTYL_ALLOW_PRIVATE_NETWORKS;
+      this.allowPrivateNetworks = envVal === "true" || envVal === "1";
+    }
+  }
+
   /**
    * Verifies connectivity and credentials with a Pterodactyl panel using the Client API.
+   *
+   * Note: Untrusted user input in `params` cannot override the host-level `allowPrivateNetworks`
+   * setting, preserving multi-tenant SSRF isolation.
    *
    * @param params Panel URL, Client API Key, and optional timeout
    * @returns Structured PanelConnectionResult (never containing raw API credentials)
@@ -50,6 +71,7 @@ export class PanelConnectionService {
         baseUrl: params.panelUrl,
         apiKey: params.apiKey,
         timeoutMs: params.timeoutMs,
+        allowPrivateNetworks: this.allowPrivateNetworks,
       });
     } catch (clientInitError) {
       if (clientInitError instanceof PterodactylUrlError) {

@@ -8,6 +8,14 @@ export const envSchema = z.object({
   DISCORD_CLIENT_ID: z.string().min(1, "DISCORD_CLIENT_ID is required"),
   DISCORD_GUILD_ID: z.string().optional(),
   DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  PTERODACTYL_ALLOW_PRIVATE_NETWORKS: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .default(false)
+    .transform((val) => {
+      if (typeof val === "boolean") return val;
+      return val.toLowerCase() === "true" || val === "1";
+    }),
 });
 
 export type Env = z.infer<typeof envSchema>;

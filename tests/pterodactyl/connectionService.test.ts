@@ -203,6 +203,69 @@ describe("PanelConnectionService (Task 02.2)", () => {
       expect(credsInUrlRes.state).toBe(PanelConnectionState.INVALID_PANEL_URL);
       expect(credsInUrlRes.message).toContain("embedded user credentials");
     });
+
+    it("returns INVALID_PANEL_URL by default for private networks and loopback (default-deny)", async () => {
+      const loopbackRes = await service.verifyConnection({
+        panelUrl: "http://127.0.0.1:8080",
+        apiKey: TEST_API_KEY,
+      });
+      expect(loopbackRes.state).toBe(PanelConnectionState.INVALID_PANEL_URL);
+      expect(loopbackRes.message).toContain("blocked for security reasons");
+
+      const rfc1918Res = await service.verifyConnection({
+        panelUrl: "http://192.168.1.100:8080",
+        apiKey: TEST_API_KEY,
+      });
+      expect(rfc1918Res.state).toBe(PanelConnectionState.INVALID_PANEL_URL);
+      expect(rfc1918Res.message).toContain("blocked for security reasons");
+    });
+
+    it("allows private networks when service is explicitly configured with allowPrivateNetworks: true", async () => {
+      globalThis.fetch = vi.fn().mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            object: "user",
+            attributes: {
+              id: 1,
+              username: "homelab_admin",
+              email: "admin@homelab.local",
+              first_name: "Home",
+              last_name: "Lab",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      });
+
+      const lanService = new PanelConnectionService({ allowPrivateNetworks: true });
+      const res = await lanService.verifyConnection({
+        panelUrl: "http://192.168.1.100:8080",
+        apiKey: TEST_API_KEY,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.state).toBe(PanelConnectionState.CONNECTED);
+      expect(res.account?.username).toBe("homelab_admin");
+    });
+
+    it("prevents untrusted user input from overriding host-level allowPrivateNetworks setting", async () => {
+      // Attacker attempts to pass allowPrivateNetworks: true inside user params
+      const attackerPayload = {
+        panelUrl: "http://192.168.1.100:8080",
+        apiKey: TEST_API_KEY,
+        allowPrivateNetworks: true,
+      };
+
+      const defaultService = new PanelConnectionService();
+      const res = await defaultService.verifyConnection(
+        attackerPayload as unknown as PanelConnectionParams,
+      );
+
+      // Must strictly remain denied
+      expect(res.success).toBe(false);
+      expect(res.state).toBe(PanelConnectionState.INVALID_PANEL_URL);
+      expect(res.message).toContain("blocked for security reasons");
+    });
   });
 
   describe("Malformed Account Responses & HTML Pages", () => {

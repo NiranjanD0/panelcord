@@ -230,37 +230,51 @@ describe("Security Audit: Pterodactyl Integration", () => {
       );
     });
 
-    it("allows legitimate self-hosted panels on private networks by default", () => {
-      // Home labs and local self-hosted docker networks are valid for Pterodactyl
-      expect(isBlockedHost("localhost")).toBe(false);
-      expect(isBlockedHost("127.0.0.1")).toBe(false);
-      expect(isBlockedHost("192.168.1.100")).toBe(false);
-      expect(isBlockedHost("10.0.0.5")).toBe(false);
-      expect(isBlockedHost("172.20.0.2")).toBe(false);
+    it("denies private networks and loopback by default (default-deny for multi-tenant SSRF protection)", () => {
+      expect(isBlockedHost("localhost")).toBe(true);
+      expect(isBlockedHost("127.0.0.1")).toBe(true);
+      expect(isBlockedHost("::1")).toBe(true);
+      expect(isBlockedHost("192.168.1.100")).toBe(true);
+      expect(isBlockedHost("10.0.0.5")).toBe(true);
+      expect(isBlockedHost("172.20.0.2")).toBe(true);
+      expect(isBlockedHost("fc00::1")).toBe(true);
 
-      expect(() => validateAndNormalizePanelUrl("http://192.168.1.100:8080")).not.toThrow();
-      expect(() => validateAndNormalizePanelUrl("http://localhost:8080")).not.toThrow();
-      expect(() => validateAndNormalizePanelUrl("http://10.0.0.5:8080")).not.toThrow();
-    });
+      // Public host remains permitted
+      expect(isBlockedHost("panel.example.com")).toBe(false);
 
-    it("blocks private networks when allowPrivateNetworks is explicitly false", () => {
-      const opts = { allowPrivateNetworks: false };
-      expect(isBlockedHost("localhost", opts)).toBe(true);
-      expect(isBlockedHost("127.0.0.1", opts)).toBe(true);
-      expect(isBlockedHost("::1", opts)).toBe(true);
-      expect(isBlockedHost("192.168.1.1", opts)).toBe(true);
-      expect(isBlockedHost("10.0.0.1", opts)).toBe(true);
-      expect(isBlockedHost("172.16.0.1", opts)).toBe(true);
-      expect(isBlockedHost("172.31.255.255", opts)).toBe(true);
-      expect(isBlockedHost("fc00::1", opts)).toBe(true);
-
-      // Public domain is still allowed
-      expect(isBlockedHost("panel.example.com", opts)).toBe(false);
-
-      expect(() => validateAndNormalizePanelUrl("http://localhost:8080", opts)).toThrow(
+      expect(() => validateAndNormalizePanelUrl("http://192.168.1.100:8080")).toThrow(
         PterodactylUrlError,
       );
-      expect(() => validateAndNormalizePanelUrl("http://192.168.1.1:8080", opts)).toThrow(
+      expect(() => validateAndNormalizePanelUrl("http://localhost:8080")).toThrow(
+        PterodactylUrlError,
+      );
+      expect(() => validateAndNormalizePanelUrl("http://10.0.0.5:8080")).toThrow(
+        PterodactylUrlError,
+      );
+      expect(() => validateAndNormalizePanelUrl("https://panel.example.com")).not.toThrow();
+    });
+
+    it("allows private networks when allowPrivateNetworks is explicitly enabled for self-hosted panels", () => {
+      const opts = { allowPrivateNetworks: true };
+      expect(isBlockedHost("localhost", opts)).toBe(false);
+      expect(isBlockedHost("127.0.0.1", opts)).toBe(false);
+      expect(isBlockedHost("192.168.1.100", opts)).toBe(false);
+      expect(isBlockedHost("10.0.0.5", opts)).toBe(false);
+      expect(isBlockedHost("172.20.0.2", opts)).toBe(false);
+
+      expect(() => validateAndNormalizePanelUrl("http://192.168.1.100:8080", opts)).not.toThrow();
+      expect(() => validateAndNormalizePanelUrl("http://localhost:8080", opts)).not.toThrow();
+      expect(() => validateAndNormalizePanelUrl("http://10.0.0.5:8080", opts)).not.toThrow();
+    });
+
+    it("strictly blocks cloud metadata and link-local even when allowPrivateNetworks is true", () => {
+      const opts = { allowPrivateNetworks: true };
+      expect(isBlockedHost("169.254.169.254", opts)).toBe(true);
+      expect(isBlockedHost("metadata.google.internal", opts)).toBe(true);
+      expect(isBlockedHost("fe80::1", opts)).toBe(true);
+      expect(isBlockedHost("0.0.0.0", opts)).toBe(true);
+
+      expect(() => validateAndNormalizePanelUrl("http://169.254.169.254", opts)).toThrow(
         PterodactylUrlError,
       );
     });

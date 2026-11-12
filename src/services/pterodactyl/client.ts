@@ -37,14 +37,16 @@ export class PterodactylClient {
   private readonly apiKey: string;
   public readonly defaultTimeoutMs: number;
   public readonly account: AccountEndpoint;
+  public readonly allowPrivateNetworks: boolean;
 
   constructor(config: PterodactylClientConfig & { allowPrivateNetworks?: boolean }) {
     if (!config.apiKey || typeof config.apiKey !== "string" || config.apiKey.trim().length === 0) {
       throw new PterodactylAuthError("API key must be a non-empty string.");
     }
 
+    this.allowPrivateNetworks = config.allowPrivateNetworks === true;
     this.baseUrl = normalizePanelUrl(config.baseUrl, {
-      allowPrivateNetworks: config.allowPrivateNetworks,
+      allowPrivateNetworks: this.allowPrivateNetworks,
     });
     this.apiKey = config.apiKey.trim();
     this.defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -166,8 +168,12 @@ export class PterodactylClient {
             throw new PterodactylUrlError("Prevented redirect containing embedded credentials.");
           }
 
-          // Reject redirect to blocked hosts (cloud metadata, etc.)
-          if (isBlockedHost(redirectUrl.hostname)) {
+          // Reject redirect to blocked hosts (cloud metadata, private networks unless allowed, etc.)
+          if (
+            isBlockedHost(redirectUrl.hostname, {
+              allowPrivateNetworks: this.allowPrivateNetworks,
+            })
+          ) {
             throw new PterodactylUrlError(
               `Prevented redirect to blocked host: "${redirectUrl.hostname}".`,
             );

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-12
+
+### Security
+
+- **Default-Deny Private Network Access**: Inverted default SSRF behavior for `allowPrivateNetworks` from permissive to default-deny. Centrally hosted multi-tenant deployments now strictly block loopback (`127.0.0.0/8`, `localhost`, `::1`), RFC 1918 private IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), and IPv6 Unique Local (`fc00::/7`) addresses out-of-the-box.
+- **Untrusted User Override Prevention**: Enforced that `allowPrivateNetworks` is strictly immutable on `PanelConnectionService` and initialized solely via host environment variable (`PTERODACTYL_ALLOW_PRIVATE_NETWORKS`) or host constructor parameters, preventing untrusted Discord users from overriding SSRF policies.
+- **Self-Hosted Opt-In**: Added `PTERODACTYL_ALLOW_PRIVATE_NETWORKS` environment variable configuration and documentation in `.env.example` and `README.md` to allow self-hosted home-lab instances to safely opt in.
+- **SSRF Architecture Documentation**: Documented DNS rebinding limitations inherent to Node.js system resolution and outlined required production egress firewall rules (e.g. AWS Security Groups, Calico policies dropping `169.254.169.254` and RFC 1918 egress).
+
 ## [0.3.1] - 2026-11-12
 
 ### Fixed
