@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-12
+
+### Added
+
+- Foundational Pterodactyl Client API integration in `src/services/pterodactyl/`.
+- `PterodactylClient` transport implementation using native `fetch` with configurable timeouts and Pterodactyl headers.
+- Safe panel URL normalization and origin-based SSRF/credential leakage guards.
+- Comprehensive typed errors: `PterodactylAuthError` (401), `PterodactylForbiddenError` (403), `PterodactylNotFoundError` (404), `PterodactylValidationError` (422), `PterodactylRateLimitError` (429 with `Retry-After`), `PterodactylServerError` (5xx), `PterodactylNetworkError`, `PterodactylTimeoutError`, `PterodactylInvalidResponseError`, and `PterodactylUrlError`.
+- Automatic API key redaction in error messages and error details.
+- Account endpoint module (`/api/client/account`) with `getAccountDetails` and `testConnection`.
+- Full unit test coverage (22 tests) mocking HTTP requests for all status codes, timeouts, network faults, SSRF guards, and redactions.
+
 ## [0.1.1] - 2026-11-12
 
 ### Added
