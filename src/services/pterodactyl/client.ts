@@ -18,6 +18,7 @@ import type {
   PterodactylErrorResponse,
 } from "./types/index.js";
 import { AccountEndpoint } from "./endpoints/account.js";
+import { ServersEndpoint } from "./endpoints/servers.js";
 import {
   validateAndNormalizePanelUrl,
   isBlockedHost,
@@ -37,6 +38,7 @@ export class PterodactylClient {
   private readonly apiKey: string;
   public readonly defaultTimeoutMs: number;
   public readonly account: AccountEndpoint;
+  public readonly servers: ServersEndpoint;
   public readonly allowPrivateNetworks: boolean;
 
   constructor(config: PterodactylClientConfig & { allowPrivateNetworks?: boolean }) {
@@ -51,6 +53,7 @@ export class PterodactylClient {
     this.apiKey = config.apiKey.trim();
     this.defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.account = new AccountEndpoint(this);
+    this.servers = new ServersEndpoint(this);
   }
 
   public get sanitizedBaseUrl(): string {
