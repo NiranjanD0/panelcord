@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-12
+
+### Added
+
+- **Prisma Database Schema (`PanelConnection`)**:
+  - Implemented `PanelConnection` model in `prisma/schema.prisma` with `id`, `guildId`, `name`, `panelUrl`, `encryptedApiKey`, `encryptionIv`, `encryptionAuthTag`, `encryptionKeyVersion`, and timestamps.
+  - Enforced `@@unique([guildId, name])` constraint ensuring unique connection names per Discord guild while permitting multiple connections per guild.
+  - Indexed `guildId` (`@@index([guildId])`) for fast multi-tenant query performance.
+  - Designed schema with forward compatibility for future Pterodactyl server-to-Discord mappings.
+- **AES-256-GCM Credential Encryption Service (`CredentialEncryptionService`)**:
+  - Implemented `CredentialEncryptionService` in `src/services/pterodactyl/encryptionService.ts` using `node:crypto`.
+  - Enforced 32-byte master encryption keys validated from `PANELCORD_ENCRYPTION_KEY` (format `openssl rand -hex 32`).
+  - Generated unique 12-byte (96-bit) cryptographically secure random IVs per encryption operation.
+  - Implemented 16-byte (128-bit) GCM authentication tag verification on decryption, failing closed on tampered ciphertext or tags.
+  - Implemented contextual Additional Authenticated Data (AAD) binding (`panelcord:aad:v1:<guildId>:<connectionId>`), preventing ciphertext swapping across guilds or records without detection.
+  - Supported ciphertext key versioning (`encryptionKeyVersion: 1`) for future key rotation compatibility.
+  - Strict fail-closed design with guaranteed credential redaction and zero plaintext fallback.
+- **Panel Credential Service (`PanelCredentialService`)**:
+  - Implemented `PanelCredentialService` in `src/services/pterodactyl/panelCredentialService.ts` providing multi-tenant scoped lifecycle management (`createConnection`, `getConnection`, `listConnections`, `updateConnection`, `deleteConnection`).
+  - Enforced mandatory guild scoping on all operations, rejecting cross-guild access attempts.
+  - Restricted credential decryption to an explicit internal method (`getDecryptedConnection`).
+  - Integrated `verifyBeforeSaving` to prevent storing broken or invalid credentials.
+  - Implemented `verifyStoredConnection` and `createClientForConnection` factory, scoping decrypted API keys strictly to execution time without long-lived shared memory caching.
+- **Automated Test Suite**:
+  - Added 39 automated tests across `tests/pterodactyl/encryptionService.test.ts` and `tests/pterodactyl/panelCredentialService.test.ts` covering encryption round-trips, unique IVs, tampered ciphertexts/tags, AAD mismatches, key length validation, cross-guild isolation, CRUD lifecycle, duplicate name handling, and stored connection verification.
+
 ## [0.6.0] - 2026-11-12
 
 ### Added

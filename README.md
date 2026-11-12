@@ -79,6 +79,7 @@ cp .env.example .env
 | `NODE_ENV`                           | Application environment (`development`, `test`, `production`)                              | `development`                                                   |
 | `LOG_LEVEL`                          | Pino logging level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`)                    | `info`                                                          |
 | `PTERODACTYL_ALLOW_PRIVATE_NETWORKS` | Allow connections to private/RFC 1918/loopback addresses (for self-hosted home-lab panels) | `false`                                                         |
+| `PANELCORD_ENCRYPTION_KEY`           | 32-byte hex key for AES-256-GCM credential encryption (`openssl rand -hex 32`)             | Required for persistent panel storage                           |
 
 ### 3. Generate Database Client
 
@@ -173,6 +174,45 @@ Regardless of the `PTERODACTYL_ALLOW_PRIVATE_NETWORKS` setting, cloud metadata s
 >
 > - Restrict outbound HTTP/HTTPS egress via network security groups or Calico/Cilium network policies.
 > - Drop all outbound traffic directed at `169.254.169.254/32` (metadata) and internal RFC 1918 CIDR blocks at the container or VM firewall boundary.
+
+---
+
+## Secure Credential Storage & Encryption Architecture
+
+PanelCord uses authenticated encryption (AES-256-GCM) to protect Pterodactyl Client API keys stored in PostgreSQL:
+
+### 1. Cryptographic Design
+
+- **Algorithm**: `AES-256-GCM` authenticated symmetric encryption using Node.js `node:crypto`.
+- **Master Key**: 32-byte (256-bit) cryptographically strong key supplied via `PANELCORD_ENCRYPTION_KEY`.
+- **Unique IV**: A fresh, random 12-byte (96-bit) Initialization Vector (`crypto.randomBytes(12)`) is generated for every single encryption operation. IVs are never reused.
+- **Integrity & Authentication Tag**: 16-byte (128-bit) GCM authentication tag verifies ciphertext integrity and authenticity upon decryption. Any modification to ciphertext, tag, or key immediately aborts decryption.
+- **Contextual AAD Binding**: Additional Authenticated Data (`panelcord:aad:v1:<guildId>:<connectionId>`) binds the ciphertext to the owning Discord guild and connection record. Ciphertext cannot be moved or swapped between guild records without triggering authentication failures.
+- **Key Versioning**: Records track `encryptionKeyVersion` (version 1) to support future cryptographic key rotation.
+
+### 2. Master Key Generation
+
+Generate a cryptographically secure 32-byte hexadecimal key using `openssl`:
+
+```bash
+openssl rand -hex 32
+```
+
+Add the generated key to your `.env` file:
+
+```env
+PANELCORD_ENCRYPTION_KEY=your_generated_64_character_hex_key_here
+```
+
+### 3. Backup, Recovery & Key Loss Implications
+
+> [!CAUTION]
+> **CRITICAL: Losing `PANELCORD_ENCRYPTION_KEY` permanently renders all stored Pterodactyl credentials unrecoverable.**
+>
+> - **Database Backups**: Backups of the PostgreSQL database contain only AES-256-GCM ciphertext, unique IVs, and authentication tags. Without the master key, database records cannot be decrypted by anyone.
+> - **Disaster Recovery**: Always store a secure backup of `PANELCORD_ENCRYPTION_KEY` in your production secret manager (e.g. AWS Secrets Manager, HashiCorp Vault, 1Password Secrets).
+> - **Zero Fallback**: PanelCord fails closed. It will never fall back to plaintext storage or insecure encryption if the key is missing or invalid.
+> - **Future Key Rotation**: The schema and encryption service support versioned ciphertext (`encryptionKeyVersion`). When rotating keys, a migration worker can decrypt with key version $N$ and re-encrypt with key version $N+1$.
 
 ---
 

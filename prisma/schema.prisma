@@ -9,3 +9,24 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+/// Represents an encrypted Pterodactyl panel connection owned by a Discord guild.
+model PanelConnection {
+  id                   String   @id @default(uuid())
+  guildId              String   @map("guild_id")
+  name                 String
+  panelUrl             String   @map("panel_url")
+  encryptedApiKey      String   @map("encrypted_api_key")
+  encryptionIv         String   @map("encryption_iv")
+  encryptionAuthTag    String   @map("encryption_auth_tag")
+  encryptionKeyVersion Int      @default(1) @map("encryption_key_version")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  // Future Server Mapping compatibility:
+  // serverMappings ServerMapping[]
+
+  @@unique([guildId, name])
+  @@index([guildId])
+  @@map("panel_connections")
+}

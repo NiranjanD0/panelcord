@@ -217,3 +217,63 @@ export class PterodactylQueueFullError extends PterodactylError {
     this.name = "PterodactylQueueFullError";
   }
 }
+
+export class PterodactylEncryptionConfigError extends PterodactylError {
+  constructor(
+    message = "Encryption configuration error: Master encryption key is missing or invalid.",
+    options?: { cause?: unknown },
+  ) {
+    super(message, { cause: options?.cause, isRetryable: false });
+    this.name = "PterodactylEncryptionConfigError";
+  }
+}
+
+export class PterodactylEncryptionError extends PterodactylError {
+  constructor(
+    message = "Failed to encrypt credentials.",
+    options?: { apiKeyToRedact?: string; cause?: unknown },
+  ) {
+    super(message, {
+      apiKeyToRedact: options?.apiKeyToRedact,
+      cause: options?.cause,
+      isRetryable: false,
+    });
+    this.name = "PterodactylEncryptionError";
+  }
+}
+
+export class PterodactylDecryptionError extends PterodactylError {
+  constructor(
+    message = "Failed to decrypt credentials: authentication tag mismatch or corrupted ciphertext.",
+    options?: { cause?: unknown },
+  ) {
+    super(message, { cause: options?.cause, isRetryable: false });
+    this.name = "PterodactylDecryptionError";
+  }
+}
+
+export class PterodactylUnsupportedKeyVersionError extends PterodactylError {
+  constructor(keyVersion: number) {
+    super(`Unsupported encryption key version: ${keyVersion}.`, { isRetryable: false });
+    this.name = "PterodactylUnsupportedKeyVersionError";
+  }
+}
+
+export class PanelConnectionNotFoundError extends PterodactylError {
+  constructor(connectionId: string, guildId: string) {
+    super(
+      `Panel connection "${connectionId}" was not found or does not belong to guild "${guildId}".`,
+      { isRetryable: false },
+    );
+    this.name = "PanelConnectionNotFoundError";
+  }
+}
+
+export class DuplicateConnectionNameError extends PterodactylError {
+  constructor(name: string, guildId: string) {
+    super(`A panel connection named "${name}" already exists for guild "${guildId}".`, {
+      isRetryable: false,
+    });
+    this.name = "DuplicateConnectionNameError";
+  }
+}
