@@ -1,0 +1,43 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://panelcord:panelcord_secret@postgres:5432/panelcord?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - panelcord-net
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: panelcord
+      POSTGRES_PASSWORD: panelcord_secret
+      POSTGRES_DB: panelcord
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U panelcord -d panelcord"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - panelcord-net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  panelcord-net:
+    driver: bridge
