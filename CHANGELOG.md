@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-13
+
+### Added
+
+- **Slash Command Registration Infrastructure (`src/lib/commandRegistration.ts`)**:
+  - Implemented `validateCommand` and `validateCommands` enforcing Discord slash command specifications (1-32 lowercase characters matching Unicode regex, non-empty descriptions up to 100 characters, duplicate name prevention) using Zod.
+  - Implemented `deployCommands` service supporting both development guild-specific and production global deployment via Discord REST API.
+  - Refactored `src/scripts/deploy-commands.ts` CLI deployment script to use the centralized, testable `deployCommands` service.
+- **Interaction Response Utilities (`src/interactions/responses.ts`)**:
+  - Implemented state-aware response helpers: `safeReply`, `safeDefer`, `safeUpdate`, `safeDeferUpdate`, and `safeFollowUp`.
+  - Added race condition and duplicate acknowledgement protection (Discord error `40060`).
+  - Added silent handling for expired interactions (Discord error `10062`) to prevent unhandled promise rejections when the 3-second acknowledgement deadline is exceeded.
+  - Implemented standardized visual response payload formatters: `createErrorPayload`, `createSuccessPayload`, and `createInfoPayload`.
+- **Centralized Interaction Error Handling (`src/interactions/errorHandler.ts`)**:
+  - Implemented centralized exception handler `handleInteractionError` and `getUserFriendlyErrorMessage`.
+  - Guaranteed zero information leakage: internal error messages, database credentials, and stack traces are never exposed to Discord users.
+  - Mapped specific error scenarios including `DatabaseUnavailableError` and Discord error `50013` (Missing Permissions).
+  - Enriched structured Pino logging with sanitized interaction context (`interactionId`, `userId`, `guildId`, `channelId`, `commandName`/`customId`).
+- **Centralized Interaction Dispatcher (`src/interactions/dispatcher.ts`)**:
+  - Implemented `InteractionDispatcher` routing slash commands, buttons, select menus (string, user, role, channel, mentionable), and modal submissions.
+  - Supported dynamic routing via RegExp patterns with named capture groups forwarded as route parameters.
+  - Added safe fallback handling for unknown or inactive interactive components.
+  - Maintained full backward compatibility with the existing `interactionManager` export.
+  - Streamlined `src/events/interactionCreate.ts` to delegate all interaction routing to `interactionDispatcher.dispatch()`.
+- **Automated Test Suite**:
+  - Added 48 unit tests across `tests/commandRegistration.test.ts`, `tests/interactionDispatcher.test.ts`, `tests/interactionResponses.test.ts`, and `tests/interactionErrorHandling.test.ts`.
+
 ## [0.7.1] - 2026-11-12
 
 ### Added

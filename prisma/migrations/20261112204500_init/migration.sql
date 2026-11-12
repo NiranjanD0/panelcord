@@ -22,3 +22,4 @@ CREATE INDEX "panel_connections_guild_id_idx" ON "panel_connections"("guild_id")
 
 -- CreateIndex
 CREATE UNIQUE INDEX "panel_connections_guild_id_name_key" ON "panel_connections"("guild_id", "name");
+

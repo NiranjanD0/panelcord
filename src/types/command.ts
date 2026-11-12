@@ -15,5 +15,7 @@ export interface Command {
   data: SlashCommandData;
   category?: string;
   cooldown?: number;
+  defer?: boolean;
+  deferEphemeral?: boolean;
   execute: (interaction: ChatInputCommandInteraction) => Promise<void>;
 }
