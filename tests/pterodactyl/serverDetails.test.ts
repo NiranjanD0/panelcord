@@ -3,6 +3,7 @@ import { PterodactylClient } from "../../src/services/pterodactyl/client.js";
 import {
   ServerDetailService,
   normalizeServerResources,
+  isWingsConnectivityError,
 } from "../../src/services/pterodactyl/serverDetailService.js";
 import {
   validateServerIdentifier,
@@ -12,6 +13,8 @@ import {
   formatBytes,
   formatUptime,
   formatCpu,
+  formatResourceLimit,
+  formatMemoryUsage,
   type PterodactylResourceStatsAttributes,
   type PterodactylServerAttributes,
   type NormalizedServerLimits,
@@ -223,6 +226,46 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       expect(server.permissions).toEqual(["control.start", "control.stop"]);
     });
 
+    it("strictly assigns wildcard ['*'] ONLY when ownership is explicitly verified as true", async () => {
+      // Subuser with server_owner: false and omitted user_permissions
+      const nonOwnerItem = createMockServerItem(
+        "subuser02",
+        { server_owner: false },
+        { is_server_owner: false },
+      );
+      globalThis.fetch = vi.fn().mockReturnValue(mockJsonResponse(200, nonOwnerItem));
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+      const server = await ServerDetailService.getServerDetails(client, "subuser02");
+
+      expect(server.isOwner).toBe(false);
+      expect(server.permissions).toEqual([]);
+      expect(server.permissions).not.toContain("*");
+    });
+
+    it("ensures meta.is_server_owner: false takes precedence and prevents wildcard ['*']", async () => {
+      // Conflicting/stale raw.server_owner true, but meta.is_server_owner false
+      const conflictItem = createMockServerItem(
+        "subuser03",
+        { server_owner: true },
+        { is_server_owner: false, user_permissions: ["control.restart"] },
+      );
+      globalThis.fetch = vi.fn().mockReturnValue(mockJsonResponse(200, conflictItem));
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+      const server = await ServerDetailService.getServerDetails(client, "subuser03");
+
+      expect(server.isOwner).toBe(false);
+      expect(server.permissions).toEqual(["control.restart"]);
+      expect(server.permissions).not.toContain("*");
+    });
+
     it("throws PterodactylNotFoundError when server does not exist (404)", async () => {
       globalThis.fetch = vi.fn().mockReturnValue(
         mockJsonResponse(404, {
@@ -367,9 +410,9 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       expect(resources.isCpuUnlimited).toBe(false);
     });
 
-    it("handles zero memory, disk, and CPU limits as unlimited", async () => {
+    it("accurately models zero limits as unlimited and never represents unlimited RAM as 0 B", async () => {
       const mockStats = createMockStatsItem("running", {
-        memory_bytes: 524288000,
+        memory_bytes: 524288000, // 500 MiB used
         cpu_absolute: 12.0,
       });
       globalThis.fetch = vi.fn().mockReturnValue(mockJsonResponse(200, mockStats));
@@ -380,11 +423,11 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       });
 
       const unlimitedLimits: NormalizedServerLimits = {
-        memory: 0, // unlimited
+        memory: 0, // unlimited RAM
         swap: 0,
-        disk: 0, // unlimited
+        disk: 0, // unlimited Disk
         io: 500,
-        cpu: 0, // unlimited
+        cpu: 0, // unlimited CPU
         threads: null,
       };
 
@@ -394,11 +437,29 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
         unlimitedLimits,
       );
 
-      expect(resources.memoryLimitBytes).toBe(0);
-      expect(resources.diskLimitBytes).toBe(0);
+      // Memory and disk limits should be null (no byte ceiling) when unlimited
+      expect(resources.memoryLimitBytes).toBeNull();
+      expect(resources.diskLimitBytes).toBeNull();
       expect(resources.isMemoryUnlimited).toBe(true);
       expect(resources.isDiskUnlimited).toBe(true);
       expect(resources.isCpuUnlimited).toBe(true);
+
+      // Verify formatting: RAM limit must format as "Unlimited", never "0 B"
+      expect(formatResourceLimit(resources.memoryLimitBytes, resources.isMemoryUnlimited)).toBe(
+        "Unlimited",
+      );
+      expect(formatResourceLimit(resources.diskLimitBytes, resources.isDiskUnlimited)).toBe(
+        "Unlimited",
+      );
+
+      // Memory usage formatted string: "500.00 MiB / Unlimited" (NOT "500.00 MiB / 0 B")
+      const usageDisplay = formatMemoryUsage(
+        resources.memoryBytes,
+        resources.memoryLimitBytes,
+        resources.isMemoryUnlimited,
+      );
+      expect(usageDisplay).toBe("500.00 MiB / Unlimited");
+      expect(usageDisplay).not.toContain("0 B");
     });
 
     it("leaves limit bytes as null when server limits are omitted", async () => {
@@ -487,7 +548,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
     });
   });
 
-  describe("4. Combined Retrieval & State Separation (getServerWithResources)", () => {
+  describe("4. Combined Retrieval & Error Propagation (getServerWithResources)", () => {
     it("successfully combines server details and live resource metrics", async () => {
       const mockServer = createMockServerItem("0d89d908");
       const mockStats = createMockStatsItem("running", {
@@ -515,7 +576,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       expect(combined.resourcesUnavailableReason).toBeNull();
     });
 
-    it("gracefully falls back when daemon is unreachable (502 / 504 DaemonConnectionException)", async () => {
+    it("gracefully falls back when Wings daemon is unreachable (502 / 504 / DaemonConnectionException)", async () => {
       const mockServer = createMockServerItem("0d89d908");
 
       globalThis.fetch = vi
@@ -542,6 +603,137 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       expect(combined.server.identifier).toBe("0d89d908");
       expect(combined.resources).toBeNull();
       expect(combined.resourcesUnavailableReason).toBe("daemon_unavailable");
+    });
+
+    it("detects isWingsConnectivityError correctly for various daemon failure signatures", () => {
+      const err502 = new PterodactylServerError("Bad gateway", { statusCode: 502 });
+      const err504 = new PterodactylServerError("Gateway timeout", { statusCode: 504 });
+      const errDaemonCode = new PterodactylServerError("Remote error", {
+        statusCode: 500,
+        errors: [{ code: "DaemonConnectionException", detail: "Wings unreachable" }],
+      });
+      const errDaemonMsg = new PterodactylServerError(
+        "Could not establish a connection to the machine running this server.",
+        { statusCode: 500 },
+      );
+      const errGeneric500 = new PterodactylServerError("SQLSTATE[HY000]: Database error", {
+        statusCode: 500,
+      });
+
+      expect(isWingsConnectivityError(err502)).toBe(true);
+      expect(isWingsConnectivityError(err504)).toBe(true);
+      expect(isWingsConnectivityError(errDaemonCode)).toBe(true);
+      expect(isWingsConnectivityError(errDaemonMsg)).toBe(true);
+      expect(isWingsConnectivityError(errGeneric500)).toBe(false);
+      expect(isWingsConnectivityError(new Error("Generic"))).toBe(false);
+    });
+
+    it("rethrows PterodactylAuthError (401) and does NOT silently swallow it into resourcesUnavailableReason", async () => {
+      const mockServer = createMockServerItem("0d89d908");
+
+      globalThis.fetch = vi
+        .fn()
+        .mockReturnValueOnce(mockJsonResponse(200, mockServer))
+        .mockReturnValueOnce(
+          mockJsonResponse(401, {
+            errors: [{ code: "AuthenticationException", detail: "Token expired." }],
+          }),
+        );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
+        PterodactylAuthError,
+      );
+    });
+
+    it("rethrows PterodactylForbiddenError (403) and does NOT silently swallow it", async () => {
+      const mockServer = createMockServerItem("0d89d908");
+
+      globalThis.fetch = vi
+        .fn()
+        .mockReturnValueOnce(mockJsonResponse(200, mockServer))
+        .mockReturnValueOnce(
+          mockJsonResponse(403, {
+            errors: [
+              { code: "AccessDeniedHttpException", detail: "No resource stats permission." },
+            ],
+          }),
+        );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
+        PterodactylForbiddenError,
+      );
+    });
+
+    it("rethrows PterodactylRateLimitError (429) and does NOT silently swallow it", async () => {
+      const mockServer = createMockServerItem("0d89d908");
+
+      globalThis.fetch = vi
+        .fn()
+        .mockReturnValueOnce(mockJsonResponse(200, mockServer))
+        .mockReturnValueOnce(
+          mockJsonResponse(429, {
+            errors: [{ code: "TooManyRequestsHttpException", detail: "Rate limit exceeded." }],
+          }),
+        );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
+        PterodactylRateLimitError,
+      );
+    });
+
+    it("rethrows unexpected internal server error (500 non-daemon) and does NOT swallow it", async () => {
+      const mockServer = createMockServerItem("0d89d908");
+
+      globalThis.fetch = vi
+        .fn()
+        .mockReturnValueOnce(mockJsonResponse(200, mockServer))
+        .mockReturnValueOnce(
+          mockJsonResponse(500, {
+            errors: [{ code: "QueryException", detail: "Database connection failed on panel." }],
+          }),
+        );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
+        PterodactylServerError,
+      );
+    });
+
+    it("rethrows malformed API response (PterodactylInvalidResponseError) and does NOT swallow it", async () => {
+      const mockServer = createMockServerItem("0d89d908");
+
+      globalThis.fetch = vi
+        .fn()
+        .mockReturnValueOnce(mockJsonResponse(200, mockServer))
+        .mockReturnValueOnce(mockJsonResponse(200, { corrupted: true }));
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDetailService.getServerWithResources(client, "0d89d908")).rejects.toThrow(
+        PterodactylInvalidResponseError,
+      );
     });
 
     it("rethrows daemon error when throwOnResourceError option is true", async () => {
@@ -571,7 +763,6 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
     it("distinguishes suspended server from regular power state", async () => {
       const mockServer = createMockServerItem("suspended01", { is_suspended: true });
 
-      // Simulate Wings daemon returning offline stats or error for suspended server
       globalThis.fetch = vi
         .fn()
         .mockReturnValueOnce(mockJsonResponse(200, mockServer))
@@ -644,7 +835,7 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
     });
   });
 
-  describe("5. Telemetry Unit Formatters", () => {
+  describe("5. Telemetry Unit Formatters & Zero-Limit Representation", () => {
     describe("formatBytes", () => {
       it("formats zero bytes", () => {
         expect(formatBytes(0)).toBe("0 B");
@@ -669,6 +860,40 @@ describe("Pterodactyl Server Details & Resource Monitoring (Task 02.4)", () => {
       it("respects custom decimal places", () => {
         expect(formatBytes(1572864, { decimals: 1 })).toBe("1.5 MiB");
         expect(formatBytes(1572864, { decimals: 0 })).toBe("2 MiB");
+      });
+
+      it("supports zeroAsUnlimited option", () => {
+        expect(formatBytes(0, { zeroAsUnlimited: true })).toBe("Unlimited");
+        expect(formatBytes(null, { zeroAsUnlimited: true })).toBe("Unlimited");
+        expect(formatBytes(1048576, { zeroAsUnlimited: true })).toBe("1.00 MiB");
+      });
+    });
+
+    describe("formatResourceLimit", () => {
+      it("formats explicit finite limits as byte strings", () => {
+        expect(formatResourceLimit(1073741824, false)).toBe("1.00 GiB");
+        expect(formatResourceLimit(4294967296, false)).toBe("4.00 GiB");
+      });
+
+      it("formats unlimited resources as 'Unlimited', never '0 B'", () => {
+        expect(formatResourceLimit(null, true)).toBe("Unlimited");
+        expect(formatResourceLimit(0, true)).toBe("Unlimited");
+        expect(formatResourceLimit(null, false)).toBe("Unlimited");
+        expect(formatResourceLimit(0, false)).toBe("Unlimited");
+        expect(formatResourceLimit(undefined)).toBe("Unlimited");
+      });
+    });
+
+    describe("formatMemoryUsage", () => {
+      it("formats used and limit for finite allocation", () => {
+        const result = formatMemoryUsage(1073741824, 4294967296, false);
+        expect(result).toBe("1.00 GiB / 4.00 GiB");
+      });
+
+      it("formats used and limit for unlimited allocation without displaying '0 B'", () => {
+        const result = formatMemoryUsage(2147483648, null, true);
+        expect(result).toBe("2.00 GiB / Unlimited");
+        expect(result).not.toContain("0 B");
       });
     });
 

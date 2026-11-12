@@ -37,17 +37,23 @@ export function normalizeServer(
     };
   }
 
-  const isOwner = meta?.is_server_owner !== undefined ? meta.is_server_owner : raw.server_owner;
+  // Strict ownership verification:
+  // Ownership must be explicitly verified as boolean true by the API response.
+  const isOwner =
+    typeof meta?.is_server_owner === "boolean"
+      ? meta.is_server_owner === true
+      : raw.server_owner === true;
 
   // Permissions in Pterodactyl:
   // Server owners have implicit full access to all server capabilities.
   // Subusers receive explicit permission strings assigned to their account.
+  // Wildcard ["*"] is strictly assigned ONLY when ownership is explicitly verified as true.
   let permissions: string[];
   if (Array.isArray(meta?.user_permissions)) {
     permissions = meta.user_permissions.map(String);
   } else if (Array.isArray(raw.permissions)) {
     permissions = raw.permissions.map(String);
-  } else if (isOwner) {
+  } else if (isOwner === true) {
     permissions = ["*"];
   } else {
     permissions = [];

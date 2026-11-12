@@ -14,6 +14,7 @@ import { PterodactylServerError } from "./errors/index.js";
 /**
  * Normalizes raw Pterodactyl resource utilization stats into a clean, strongly typed model.
  * If server limits are provided, correlates memory, disk, and CPU limits into bytes and flags.
+ * Represents Pterodactyl's 0-limit convention as unlimited (null limit bytes, isMemoryUnlimited: true).
  */
 export function normalizeServerResources(
   raw: PterodactylResourceStatsAttributes,
@@ -33,7 +34,8 @@ export function normalizeServerResources(
   let isMemoryUnlimited = false;
   if (limits !== undefined) {
     if (limits.memory === 0) {
-      memoryLimitBytes = 0;
+      // 0 MB indicates unlimited RAM in Pterodactyl. Represented as null byte limit to prevent 0 B displays.
+      memoryLimitBytes = null;
       isMemoryUnlimited = true;
     } else {
       memoryLimitBytes = limits.memory * 1024 * 1024;
@@ -45,7 +47,8 @@ export function normalizeServerResources(
   let isDiskUnlimited = false;
   if (limits !== undefined) {
     if (limits.disk === 0) {
-      diskLimitBytes = 0;
+      // 0 MB indicates unlimited Disk in Pterodactyl. Represented as null byte limit to prevent 0 B displays.
+      diskLimitBytes = null;
       isDiskUnlimited = true;
     } else {
       diskLimitBytes = limits.disk * 1024 * 1024;
@@ -70,6 +73,46 @@ export function normalizeServerResources(
     isDiskUnlimited,
     isCpuUnlimited,
   };
+}
+
+/**
+ * Detects whether an error represents a recognized Wings daemon connectivity or communication failure.
+ */
+export function isWingsConnectivityError(error: unknown): boolean {
+  if (error instanceof PterodactylServerError) {
+    // 502 Bad Gateway and 504 Gateway Timeout are standard daemon connectivity proxy errors from Pterodactyl
+    if (error.statusCode === 502 || error.statusCode === 504) {
+      return true;
+    }
+
+    // Inspect error response details from panel
+    if (Array.isArray(error.errors)) {
+      for (const err of error.errors) {
+        if (
+          err.code === "DaemonConnectionException" ||
+          (typeof err.detail === "string" &&
+            (err.detail.includes("DaemonConnectionException") ||
+              err.detail.includes("Could not establish a connection to the machine") ||
+              err.detail.includes("error while communicating with the machine") ||
+              err.detail.includes("error occurred on the remote host")))
+        ) {
+          return true;
+        }
+      }
+    }
+
+    if (
+      typeof error.message === "string" &&
+      (error.message.includes("DaemonConnectionException") ||
+        error.message.includes("Could not establish a connection to the machine") ||
+        error.message.includes("error while communicating with the machine") ||
+        error.message.includes("error occurred on the remote host"))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export class ServerDetailService {
@@ -106,6 +149,9 @@ export class ServerDetailService {
    * Clearly separates static metadata from dynamic resource metrics and handles
    * suspended, installing, or daemon-unavailable scenarios.
    *
+   * Note: Authentication, validation, permission, and unexpected API errors are never swallowed;
+   * only recognized Wings daemon connectivity failures produce resourcesUnavailableReason.
+   *
    * @param identifier Server short UUID or full UUID
    * @param options Configuration for resource error handling
    */
@@ -125,16 +171,34 @@ export class ServerDetailService {
         throw error;
       }
 
-      if (server.isSuspended) {
+      // Check if server is in a special lifecycle state that explains missing resources
+      if (
+        server.isSuspended &&
+        (isWingsConnectivityError(error) ||
+          (error instanceof PterodactylServerError &&
+            (error.statusCode === 500 || error.statusCode === 400)))
+      ) {
         resourcesUnavailableReason = "suspended";
-      } else if (server.isInstalling) {
+      } else if (
+        server.isInstalling &&
+        (isWingsConnectivityError(error) ||
+          (error instanceof PterodactylServerError &&
+            (error.statusCode === 500 || error.statusCode === 400)))
+      ) {
         resourcesUnavailableReason = "installing";
-      } else if (server.isTransferring) {
+      } else if (
+        server.isTransferring &&
+        (isWingsConnectivityError(error) ||
+          (error instanceof PterodactylServerError &&
+            (error.statusCode === 500 || error.statusCode === 400)))
+      ) {
         resourcesUnavailableReason = "transferring";
-      } else if (error instanceof PterodactylServerError) {
+      } else if (isWingsConnectivityError(error)) {
         resourcesUnavailableReason = "daemon_unavailable";
       } else {
-        resourcesUnavailableReason = error instanceof Error ? error.message : "unavailable";
+        // Do NOT swallow auth (401), permission (403), validation (422), rate limit (429),
+        // or unexpected API/server errors
+        throw error;
       }
     }
 

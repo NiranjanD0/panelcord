@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-11-12
+
+### Fixed
+
+- **Unlimited Limits Representation**: Accurately represented Pterodactyl's zero-limit convention where `memory: 0` or `disk: 0` indicates unlimited resources. In `NormalizedServerResources`, unlimited memory and disk limits are represented with `memoryLimitBytes: null` and `diskLimitBytes: null` alongside `isMemoryUnlimited: true` and `isDiskUnlimited: true`, preventing unlimited allocations from ever being displayed as "0 B" or causing division-by-zero errors in utilization calculations. Added `formatResourceLimit` and `formatMemoryUsage` helpers (e.g. "500.00 MiB / Unlimited").
+- **Strict Owner Permission Verification**: Hardened `normalizeServer` in `src/services/pterodactyl/serverDiscoveryService.ts` to assert that wildcard `["*"]` permissions are assigned strictly when ownership is verified as boolean `true` (`isOwner === true`). Non-owners and subusers without assigned permissions now strictly resolve to an empty array `[]` and can never receive wildcard permissions by default or through ambiguous truthy attributes.
+- **Daemon Error Isolation & Propagation**: Hardened `getServerWithResources` in `src/services/pterodactyl/serverDetailService.ts` with `isWingsConnectivityError`. Authentication failures (HTTP 401), permission failures (HTTP 403), validation errors (HTTP 422), rate limits (HTTP 429), and unexpected API/server errors are now strictly re-thrown rather than swallowed into `resourcesUnavailableReason`. Only verified Wings connectivity errors (HTTP 502 Bad Gateway, HTTP 504 Gateway Timeout, `DaemonConnectionException`) or expected container lifecycle states (suspended, installing, transferring) produce `resourcesUnavailableReason`.
+
 ## [0.5.0] - 2026-11-12
 
 ### Added
