@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-11-12
+
+### Fixed
+
+- **SSRF Protection & Host Validation**: Introduced `isBlockedHost` and `validateAndNormalizePanelUrl` in `src/services/pterodactyl/security.ts` to strictly block cloud metadata services (`169.254.169.254`, `metadata.google.internal`, `fd00:ec2::254`), link-local IPs (`169.254.0.0/16`, `fe80::/10`), and unspecified/broadcast addresses (`0.0.0.0`, `255.255.255.255`, `::`) while safely allowing legitimate self-hosted panels on local/private subnets.
+- **Redirect Loop & Max Hop Guards**: Enforced strict maximum redirect limit of 3 hops and implemented visited URL set tracking to detect and terminate redirect loops (e.g. A -> B -> A or self-redirects).
+- **Cross-Origin & Credential Sanitization**: Hardened redirect validation to prevent protocol downgrades (HTTPS -> HTTP), port changes, subdomain hops, and embedded credentials (`user:pass@`) in redirect targets.
+- **Authentication State Mapping**: Validated and tested strict mapping of HTTP 401 directly to `INVALID_CREDENTIALS` and HTTP 403 strictly to `INSUFFICIENT_PERMISSIONS` (preventing permission errors from ever being misdiagnosed as invalid API keys).
+
+### Added
+
+- Security audit test suite (`tests/pterodactyl/securityAudit.test.ts`) covering 19 distinct attack and edge-case vectors across redirect handling, SSRF defense, and auth state mapping.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added

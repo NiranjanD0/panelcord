@@ -18,46 +18,18 @@ import type {
   PterodactylErrorResponse,
 } from "./types/index.js";
 import { AccountEndpoint } from "./endpoints/account.js";
+import {
+  validateAndNormalizePanelUrl,
+  isBlockedHost,
+  type UrlValidationOptions,
+} from "./security.js";
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
 export const MAX_REDIRECTS = 3;
 export const PTERODACTYL_ACCEPT_HEADER = "application/vnd.pterodactyl.v1+json, application/json";
 
-export function normalizePanelUrl(rawUrl: string): URL {
-  if (!rawUrl || typeof rawUrl !== "string") {
-    throw new PterodactylUrlError("Panel URL must be a non-empty string.");
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl.trim());
-  } catch {
-    throw new PterodactylUrlError(`Invalid panel URL format: "${rawUrl.substring(0, 30)}"`);
-  }
-
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new PterodactylUrlError(
-      `Unsupported protocol "${parsed.protocol}". Panel URL must use HTTP or HTTPS.`,
-    );
-  }
-
-  if (parsed.username || parsed.password) {
-    throw new PterodactylUrlError("Panel URL must not contain embedded user credentials.");
-  }
-
-  // Clear query and hash from base URL
-  parsed.search = "";
-  parsed.hash = "";
-
-  let pathname = parsed.pathname.replace(/\/+$/, "");
-  if (pathname.endsWith("/api/client")) {
-    pathname = pathname.slice(0, -"/api/client".length);
-  } else if (pathname.endsWith("/api")) {
-    pathname = pathname.slice(0, -"/api".length);
-  }
-  parsed.pathname = pathname;
-
-  return parsed;
+export function normalizePanelUrl(rawUrl: string, options?: UrlValidationOptions): URL {
+  return validateAndNormalizePanelUrl(rawUrl, options);
 }
 
 export class PterodactylClient {
@@ -66,12 +38,14 @@ export class PterodactylClient {
   public readonly defaultTimeoutMs: number;
   public readonly account: AccountEndpoint;
 
-  constructor(config: PterodactylClientConfig) {
+  constructor(config: PterodactylClientConfig & { allowPrivateNetworks?: boolean }) {
     if (!config.apiKey || typeof config.apiKey !== "string" || config.apiKey.trim().length === 0) {
       throw new PterodactylAuthError("API key must be a non-empty string.");
     }
 
-    this.baseUrl = normalizePanelUrl(config.baseUrl);
+    this.baseUrl = normalizePanelUrl(config.baseUrl, {
+      allowPrivateNetworks: config.allowPrivateNetworks,
+    });
     this.apiKey = config.apiKey.trim();
     this.defaultTimeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.account = new AccountEndpoint(this);
@@ -98,8 +72,11 @@ export class PterodactylClient {
       targetUrl = new URL(cleanPath, this.baseUrl);
     }
 
-    // Prevent accidental credential forwarding to unrelated hosts (SSRF guard)
-    if (targetUrl.origin !== this.baseUrl.origin) {
+    // SSRF Guard: Prevent accidental credential forwarding to unrelated hosts
+    if (
+      targetUrl.hostname.toLowerCase() !== this.baseUrl.hostname.toLowerCase() ||
+      targetUrl.port !== this.baseUrl.port
+    ) {
       throw new PterodactylUrlError(
         "Prevented request to unrelated origin (credential leak protection).",
       );
@@ -137,6 +114,7 @@ export class PterodactylClient {
       let currentMethod = method;
       let currentBody = bodyPayload;
       let redirectCount = 0;
+      const visitedUrls = new Set<string>([currentUrl.toString()]);
       let response: Response;
 
       while (true) {
@@ -148,7 +126,7 @@ export class PterodactylClient {
           signal: AbortSignal.timeout(effectiveTimeout),
         });
 
-        // Safe redirect handling with cross-origin credential protection
+        // Safe redirect handling with loop detection & cross-origin credential protection
         if (
           response.status >= 301 &&
           response.status <= 308 &&
@@ -175,11 +153,32 @@ export class PterodactylClient {
             throw new PterodactylUrlError(`Invalid redirect Location URL: "${locationHeader}"`);
           }
 
-          // Verify host and port match (or allow upgrade from http to https on same host)
+          // Loop detection
+          if (visitedUrls.has(redirectUrl.toString())) {
+            throw new PterodactylUrlError(
+              `Redirect loop detected: "${redirectUrl.toString()}" was already visited.`,
+            );
+          }
+          visitedUrls.add(redirectUrl.toString());
+
+          // Reject redirect with embedded credentials
+          if (redirectUrl.username || redirectUrl.password) {
+            throw new PterodactylUrlError("Prevented redirect containing embedded credentials.");
+          }
+
+          // Reject redirect to blocked hosts (cloud metadata, etc.)
+          if (isBlockedHost(redirectUrl.hostname)) {
+            throw new PterodactylUrlError(
+              `Prevented redirect to blocked host: "${redirectUrl.hostname}".`,
+            );
+          }
+
+          // Verify host and port match authorized base URL
           const isSameHost =
-            redirectUrl.hostname.toLowerCase() === currentUrl.hostname.toLowerCase();
-          const isPortMatch = redirectUrl.port === currentUrl.port;
-          const isDowngrade = currentUrl.protocol === "https:" && redirectUrl.protocol === "http:";
+            redirectUrl.hostname.toLowerCase() === this.baseUrl.hostname.toLowerCase();
+          const isPortMatch = redirectUrl.port === this.baseUrl.port;
+          const isDowngrade =
+            this.baseUrl.protocol === "https:" && redirectUrl.protocol === "http:";
 
           if (!isSameHost || !isPortMatch || isDowngrade) {
             throw new PterodactylUrlError(
@@ -189,7 +188,7 @@ export class PterodactylClient {
 
           currentUrl = redirectUrl;
 
-          // Adjust method on redirect according to HTTP specs
+          // Adjust HTTP method according to standard redirect rules
           if (
             response.status === 303 ||
             ((response.status === 301 || response.status === 302) && currentMethod === "POST")

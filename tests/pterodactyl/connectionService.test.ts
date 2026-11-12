@@ -252,7 +252,7 @@ describe("PanelConnectionService (Task 02.2)", () => {
         if (callCount === 1) {
           return new Response(null, {
             status: 302,
-            headers: { Location: "https://panel.example.com/api/client/account" },
+            headers: { Location: "https://panel.example.com/api/client/account/canonical" },
           });
         }
 

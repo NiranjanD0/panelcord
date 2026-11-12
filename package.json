@@ -1,6 +1,6 @@
 {
   "name": "panelcord",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Discord bot designed to manage Pterodactyl game servers through Discord",
   "main": "dist/index.js",
   "type": "module",
