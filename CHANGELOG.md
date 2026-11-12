@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-11-12
+
+### Fixed
+
+- **Critical Field Validation in Server Normalization**: Hardened `validateServerItem` in `src/services/pterodactyl/serverDiscoveryService.ts` to strictly assert boolean `server_owner`, limits configuration object with numeric `memory`, `disk`, `cpu`, and feature limits object with numeric `databases`, `allocations`, `backups`. Missing or malformed critical fields now throw `PterodactylInvalidResponseError` instead of silently falling back to misleading defaults (`isOwner: false` or `memory: 0`).
+- **Owner vs. Subuser Permission Accuracy**: Explicitly granted wildcard `["*"]` permissions to verified server owners (`server_owner: true`) to reflect Pterodactyl's full implicit owner access model, while preserving explicit assigned permissions for subusers.
+- **Relationship Integrity**: Preserved `relationships` directly as returned by Pterodactyl, keeping missing relations as `undefined` rather than an empty object `{}`.
+- **Pagination Early Termination Efficiency**: Updated `discoverServers` loop to immediately terminate once `currentPage >= totalPages` or `pagesFetched >= totalPages`, preventing redundant fetch attempts up to `maxPages` (50) when the API indicates a smaller page count.
+
 ## [0.4.0] - 2026-11-12
 
 ### Added

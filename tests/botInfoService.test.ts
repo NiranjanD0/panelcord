@@ -22,7 +22,7 @@ describe("BotInfoService", () => {
 
     const info = BotInfoService.getBotInfo(mockClient);
     expect(info.name).toBe("PanelCord");
-    expect(info.version).toBe("0.4.0");
+    expect(info.version).toBe("0.4.1");
     expect(info.uptimeSeconds).toBe(60);
     expect(info.guildCount).toBe(5);
     expect(info.nodeVersion).toBe(process.version);

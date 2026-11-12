@@ -1,17 +1,17 @@
 export interface PterodactylServerLimits {
-  memory?: number;
+  memory: number;
   swap?: number;
-  disk?: number;
+  disk: number;
   io?: number;
-  cpu?: number;
+  cpu: number;
   threads?: string | null;
   oom_disabled?: boolean;
 }
 
 export interface PterodactylServerFeatureLimits {
-  databases?: number;
-  allocations?: number;
-  backups?: number;
+  databases: number;
+  allocations: number;
+  backups: number;
 }
 
 export interface PterodactylServerSftpDetails {
@@ -20,15 +20,15 @@ export interface PterodactylServerSftpDetails {
 }
 
 export interface PterodactylServerAttributes {
-  server_owner?: boolean;
+  server_owner: boolean;
   identifier: string;
   uuid: string;
   name: string;
-  node?: string;
+  node: string;
   sftp_details?: PterodactylServerSftpDetails;
   description?: string | null;
-  limits?: PterodactylServerLimits;
-  feature_limits?: PterodactylServerFeatureLimits;
+  limits: PterodactylServerLimits;
+  feature_limits: PterodactylServerFeatureLimits;
   is_suspended?: boolean;
   is_installing?: boolean;
   is_transferring?: boolean;

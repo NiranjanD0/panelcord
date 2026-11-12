@@ -97,11 +97,68 @@ describe("Server Discovery Service (Task 02.3)", () => {
       expect(normalized.isTransferring).toBe(false);
     });
 
-    it("handles missing optional fields with safe defaults", () => {
+    it("correctly models server ownership and permissions for owners and subusers", () => {
+      // Server owner without explicit permissions receives wildcard full access ["*"]
+      const ownerRaw = createMockServer("srv-owner", {
+        server_owner: true,
+        permissions: undefined,
+      }).attributes;
+      const ownerNormalized = normalizeServer(ownerRaw);
+      expect(ownerNormalized.isOwner).toBe(true);
+      expect(ownerNormalized.permissions).toEqual(["*"]);
+
+      // Subuser with specific permissions
+      const subuserRaw = createMockServer("srv-sub", {
+        server_owner: false,
+        permissions: ["control.start", "control.stop"],
+      }).attributes;
+      const subuserNormalized = normalizeServer(subuserRaw);
+      expect(subuserNormalized.isOwner).toBe(false);
+      expect(subuserNormalized.permissions).toEqual(["control.start", "control.stop"]);
+
+      // Subuser without permissions
+      const noPermsSubuser = createMockServer("srv-sub-empty", {
+        server_owner: false,
+        permissions: undefined,
+      }).attributes;
+      const noPermsNormalized = normalizeServer(noPermsSubuser);
+      expect(noPermsNormalized.isOwner).toBe(false);
+      expect(noPermsNormalized.permissions).toEqual([]);
+    });
+
+    it("accurately handles relationships without turning missing relations into misleading empty objects", () => {
+      // With relationships present
+      const withRelations = createMockServer("srv-rel", {
+        relationships: { allocations: { object: "list", data: [] } },
+      }).attributes;
+      expect(normalizeServer(withRelations).relationships).toEqual({
+        allocations: { object: "list", data: [] },
+      });
+
+      // Without relationships present (must remain undefined, not an empty object)
+      const noRelations = createMockServer("srv-norel", {
+        relationships: undefined,
+      }).attributes;
+      expect(normalizeServer(noRelations).relationships).toBeUndefined();
+    });
+
+    it("handles missing non-critical optional fields with safe defaults", () => {
       const minimalRaw: PterodactylServerAttributes = {
+        server_owner: true,
         identifier: "srv-minimal",
         uuid: "uuid-minimal-0000",
         name: "Minimal Server",
+        node: "Node-1",
+        limits: {
+          memory: 1024,
+          disk: 5120,
+          cpu: 100,
+        },
+        feature_limits: {
+          databases: 1,
+          allocations: 1,
+          backups: 1,
+        },
       };
 
       const normalized = normalizeServer(minimalRaw);
@@ -110,26 +167,27 @@ describe("Server Discovery Service (Task 02.3)", () => {
       expect(normalized.uuid).toBe("uuid-minimal-0000");
       expect(normalized.name).toBe("Minimal Server");
       expect(normalized.description).toBeNull();
-      expect(normalized.node).toBe("unknown");
-      expect(normalized.isOwner).toBe(false);
-      expect(normalized.permissions).toEqual([]);
+      expect(normalized.node).toBe("Node-1");
+      expect(normalized.isOwner).toBe(true);
+      expect(normalized.permissions).toEqual(["*"]);
       expect(normalized.sftp).toBeNull();
       expect(normalized.limits).toEqual({
-        memory: 0,
+        memory: 1024,
         swap: 0,
-        disk: 0,
-        io: 0,
-        cpu: 0,
+        disk: 5120,
+        io: 500,
+        cpu: 100,
         threads: null,
       });
       expect(normalized.featureLimits).toEqual({
-        databases: 0,
-        allocations: 0,
-        backups: 0,
+        databases: 1,
+        allocations: 1,
+        backups: 1,
       });
       expect(normalized.isSuspended).toBe(false);
       expect(normalized.isInstalling).toBe(false);
       expect(normalized.isTransferring).toBe(false);
+      expect(normalized.relationships).toBeUndefined();
     });
   });
 
@@ -431,6 +489,64 @@ describe("Server Discovery Service (Task 02.3)", () => {
       expect(result.totalServers).toBe(100);
     });
 
+    it("enforces pagination efficiency: stops after total_pages (2 pages) without fetching up to maxPages (50)", async () => {
+      const page1 = {
+        object: "list",
+        data: [createMockServer("srv-eff-1")],
+        meta: {
+          pagination: {
+            total: 2,
+            count: 1,
+            per_page: 1,
+            current_page: 1,
+            total_pages: 2,
+            links: { next: "https://panel.example.com/api/client?page=2" },
+          },
+        },
+      };
+
+      const page2 = {
+        object: "list",
+        data: [createMockServer("srv-eff-2")],
+        meta: {
+          pagination: {
+            total: 2,
+            count: 1,
+            per_page: 1,
+            current_page: 2,
+            total_pages: 2,
+            // Even if a buggy panel returns a next link on the final page:
+            links: { next: "https://panel.example.com/api/client?page=3" },
+          },
+        },
+      };
+
+      let fetchCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
+        fetchCount++;
+        const parsed = new URL(String(url));
+        if (parsed.searchParams.get("page") === "2") {
+          return new Response(JSON.stringify(page2), { status: 200 });
+        }
+        return new Response(JSON.stringify(page1), { status: 200 });
+      });
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      // Default maxPages is 50; service must terminate after exactly 2 pages
+      const result = await ServerDiscoveryService.discoverServers(client, { maxPages: 50 });
+
+      expect(result.success).toBe(true);
+      expect(result.pagesFetched).toBe(2);
+      expect(result.totalPages).toBe(2);
+      expect(result.servers).toHaveLength(2);
+      expect(result.truncated).toBe(false);
+      expect(fetchCount).toBe(2);
+    });
+
     it("throws PterodactylInvalidResponseError when API response is not a valid list fractal", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ object: "user", data: [] }), {
@@ -449,7 +565,7 @@ describe("Server Discovery Service (Task 02.3)", () => {
       );
     });
 
-    it("throws PterodactylInvalidResponseError when a server item in data is malformed", async () => {
+    it("throws PterodactylInvalidResponseError when a server item in data is missing identifier or uuid", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
@@ -466,7 +582,98 @@ describe("Server Discovery Service (Task 02.3)", () => {
       });
 
       await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
-        /missing required identifier or uuid/i,
+        /missing required non-empty string identifier/i,
+      );
+    });
+
+    it("throws PterodactylInvalidResponseError when critical server_owner boolean is missing or invalid", async () => {
+      const invalidOwnerItem = createMockServer("srv-bad-owner");
+      delete (invalidOwnerItem.attributes as Record<string, unknown>).server_owner;
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            object: "list",
+            data: [invalidOwnerItem],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
+        /missing required boolean server_owner field/i,
+      );
+    });
+
+    it("throws PterodactylInvalidResponseError when critical limits configuration is missing or malformed", async () => {
+      const invalidLimitsItem = createMockServer("srv-bad-limits");
+      delete (invalidLimitsItem.attributes as Record<string, unknown>).limits;
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            object: "list",
+            data: [invalidLimitsItem],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
+        /missing required limits configuration object/i,
+      );
+
+      // Non-numeric limit values
+      const nonNumericLimitsItem = createMockServer("srv-nan-limits", {
+        limits: { memory: "unlimited" as unknown as number, disk: 1000, cpu: 100 },
+      });
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            object: "list",
+            data: [nonNumericLimitsItem],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
+        /limits configuration contains missing or non-numeric values/i,
+      );
+    });
+
+    it("throws PterodactylInvalidResponseError when critical feature_limits configuration is missing or malformed", async () => {
+      const invalidFeatureLimitsItem = createMockServer("srv-bad-feat");
+      delete (invalidFeatureLimitsItem.attributes as Record<string, unknown>).feature_limits;
+
+      globalThis.fetch = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            object: "list",
+            data: [invalidFeatureLimitsItem],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      await expect(ServerDiscoveryService.discoverServers(client)).rejects.toThrow(
+        /missing required feature_limits configuration object/i,
       );
     });
 
@@ -574,28 +781,28 @@ describe("Server Discovery Service (Task 02.3)", () => {
         data: [createMockServer("srv1")],
         meta: {
           pagination: {
-            total: 2,
+            total: 10,
             count: 1,
             per_page: 1,
             current_page: 1,
-            total_pages: 2,
+            total_pages: 5,
             links: { next: "https://panel.example.com/api/client?page=2" },
           },
         },
       };
 
-      // Page 2 links back to Page 1
+      // Page 2 links back to Page 2 (loop)
       const page2 = {
         object: "list",
         data: [createMockServer("srv2")],
         meta: {
           pagination: {
-            total: 2,
+            total: 10,
             count: 1,
             per_page: 1,
             current_page: 2,
-            total_pages: 2,
-            links: { next: "https://panel.example.com/api/client?page=2" }, // loop to itself or page 1
+            total_pages: 5,
+            links: { next: "https://panel.example.com/api/client?page=2" },
           },
         },
       };

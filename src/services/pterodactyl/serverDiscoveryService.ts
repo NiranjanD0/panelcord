@@ -15,12 +15,11 @@ export const DEFAULT_MAX_PAGES = 50;
 
 /**
  * Normalizes a raw Pterodactyl server attribute payload into a strongly typed,
- * clean data model with safe defaults for missing optional fields.
+ * clean data model. Critical fields (isOwner, limits, featureLimits) must be present
+ * and validated before calling this function; missing critical fields are never
+ * silently turned into misleading defaults.
  */
 export function normalizeServer(raw: PterodactylServerAttributes): NormalizedServer {
-  const limits = raw.limits ?? {};
-  const featureLimits = raw.feature_limits ?? {};
-
   let sftp: NormalizedServerSftp | null = null;
   if (
     raw.sftp_details &&
@@ -35,33 +34,48 @@ export function normalizeServer(raw: PterodactylServerAttributes): NormalizedSer
     };
   }
 
+  // Permissions in Pterodactyl:
+  // Server owners have implicit full access to all server capabilities.
+  // Subusers receive explicit permission strings assigned to their account.
+  const permissions = Array.isArray(raw.permissions)
+    ? raw.permissions.map(String)
+    : raw.server_owner
+      ? ["*"]
+      : [];
+
   return {
-    identifier: String(raw.identifier || ""),
-    uuid: String(raw.uuid || ""),
-    name: String(raw.name || "Unnamed Server"),
-    description: raw.description ? String(raw.description) : null,
+    identifier: String(raw.identifier).trim(),
+    uuid: String(raw.uuid).trim(),
+    name: String(raw.name).trim(),
+    description:
+      typeof raw.description === "string" && raw.description.trim().length > 0
+        ? raw.description.trim()
+        : null,
     node: String(raw.node || "unknown"),
-    isOwner: Boolean(raw.server_owner),
-    permissions: Array.isArray(raw.permissions) ? raw.permissions.map(String) : [],
+    isOwner: raw.server_owner,
+    permissions,
     sftp,
     limits: {
-      memory: typeof limits.memory === "number" ? limits.memory : 0,
-      swap: typeof limits.swap === "number" ? limits.swap : 0,
-      disk: typeof limits.disk === "number" ? limits.disk : 0,
-      io: typeof limits.io === "number" ? limits.io : 0,
-      cpu: typeof limits.cpu === "number" ? limits.cpu : 0,
+      memory: raw.limits.memory,
+      swap: typeof raw.limits.swap === "number" && !isNaN(raw.limits.swap) ? raw.limits.swap : 0,
+      disk: raw.limits.disk,
+      io: typeof raw.limits.io === "number" && !isNaN(raw.limits.io) ? raw.limits.io : 500,
+      cpu: raw.limits.cpu,
       threads:
-        limits.threads !== undefined && limits.threads !== null ? String(limits.threads) : null,
+        raw.limits.threads !== undefined && raw.limits.threads !== null
+          ? String(raw.limits.threads)
+          : null,
     },
     featureLimits: {
-      databases: typeof featureLimits.databases === "number" ? featureLimits.databases : 0,
-      allocations: typeof featureLimits.allocations === "number" ? featureLimits.allocations : 0,
-      backups: typeof featureLimits.backups === "number" ? featureLimits.backups : 0,
+      databases: raw.feature_limits.databases,
+      allocations: raw.feature_limits.allocations,
+      backups: raw.feature_limits.backups,
     },
     isSuspended: Boolean(raw.is_suspended),
     isInstalling: Boolean(raw.is_installing),
     isTransferring: Boolean(raw.is_transferring),
-    relationships: raw.relationships,
+    relationships:
+      raw.relationships && typeof raw.relationships === "object" ? raw.relationships : undefined,
   };
 }
 
@@ -166,6 +180,12 @@ export class ServerDiscoveryService {
         break;
       }
 
+      // Pagination efficiency: terminate immediately when all pages indicated by the API
+      // have been fetched, or when an empty page is returned
+      if (currentPage >= totalPages || pagesFetched >= totalPages || response.data.length === 0) {
+        break;
+      }
+
       // Determine next page URL or parameter
       const rawNext = pagination?.links?.next;
       if (rawNext && typeof rawNext === "string" && rawNext.trim().length > 0) {
@@ -239,9 +259,79 @@ export class ServerDiscoveryService {
     }
 
     const attrs = (item as Record<string, unknown>).attributes as Record<string, unknown>;
-    if (!attrs.identifier || !attrs.uuid) {
+
+    // Validate critical identification fields
+    if (
+      !attrs.identifier ||
+      typeof attrs.identifier !== "string" ||
+      attrs.identifier.trim().length === 0
+    ) {
       throw new PterodactylInvalidResponseError(
-        "Server item is missing required identifier or uuid.",
+        "Server item is missing required non-empty string identifier.",
+        attrs,
+      );
+    }
+    if (!attrs.uuid || typeof attrs.uuid !== "string" || attrs.uuid.trim().length === 0) {
+      throw new PterodactylInvalidResponseError(
+        "Server item is missing required non-empty string uuid.",
+        attrs,
+      );
+    }
+    if (!attrs.name || typeof attrs.name !== "string") {
+      throw new PterodactylInvalidResponseError(
+        "Server item is missing required string name.",
+        attrs,
+      );
+    }
+
+    // Validate server_owner critical boolean field (prevents misclassifying subusers/owners)
+    if (typeof attrs.server_owner !== "boolean") {
+      throw new PterodactylInvalidResponseError(
+        "Server item is missing required boolean server_owner field.",
+        attrs,
+      );
+    }
+
+    // Validate limits critical configuration object
+    if (!attrs.limits || typeof attrs.limits !== "object") {
+      throw new PterodactylInvalidResponseError(
+        "Server item is missing required limits configuration object.",
+        attrs,
+      );
+    }
+    const limits = attrs.limits as Record<string, unknown>;
+    if (
+      typeof limits.memory !== "number" ||
+      isNaN(limits.memory) ||
+      typeof limits.disk !== "number" ||
+      isNaN(limits.disk) ||
+      typeof limits.cpu !== "number" ||
+      isNaN(limits.cpu)
+    ) {
+      throw new PterodactylInvalidResponseError(
+        "Server item limits configuration contains missing or non-numeric values.",
+        attrs,
+      );
+    }
+
+    // Validate feature_limits critical configuration object
+    if (!attrs.feature_limits || typeof attrs.feature_limits !== "object") {
+      throw new PterodactylInvalidResponseError(
+        "Server item is missing required feature_limits configuration object.",
+        attrs,
+      );
+    }
+    const featureLimits = attrs.feature_limits as Record<string, unknown>;
+    if (
+      typeof featureLimits.databases !== "number" ||
+      isNaN(featureLimits.databases) ||
+      typeof featureLimits.allocations !== "number" ||
+      isNaN(featureLimits.allocations) ||
+      typeof featureLimits.backups !== "number" ||
+      isNaN(featureLimits.backups)
+    ) {
+      throw new PterodactylInvalidResponseError(
+        "Server item feature_limits configuration contains missing or non-numeric values.",
         attrs,
       );
     }
