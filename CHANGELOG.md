@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-11-12
+
+### Added
+
+- **Prisma SQL Migration & Environment**:
+  - Generated initial Prisma migration `prisma/migrations/20261112204500_init/migration.sql` creating the `panel_connections` table, `guild_id` index, and `(guild_id, name)` unique constraint.
+  - Added `migration_lock.toml` for Postgres provider tracking.
+  - Updated `docker-compose.yml` to pass `PANELCORD_ENCRYPTION_KEY` to the bot service.
+- **End-to-End Integration Test Suite**:
+  - Implemented comprehensive automated test suite in `tests/pterodactyl/e2eWorkflow.test.ts` covering Workflows A through E:
+    - Workflow A: Panel Connection Lifecycle (URL validation, API key validation, encryption, persistence, sanitized metadata retrieval, panel verification, credential non-exposure).
+    - Workflow B: Server Discovery Flow (persisted connection retrieval, in-boundary decryption, multi-page discovery, server normalization, account ownership & permission verification).
+    - Workflow C: Server Details & Telemetry (online telemetry, offline/stopped metrics, Wings daemon outage isolation with `resourcesUnavailableReason`, Pterodactyl 0-limit unlimited convention).
+    - Workflow D: Multi-Tenant Security & Isolation (cross-guild read/update/delete rejection, scoped querying, AAD tamper detection and ciphertext swapping protection).
+    - Workflow E: Resilience & Failure Recovery (HTTP 429 Retry-After parsing and retry recovery, 502/503/504 backoff retries, configurable `retryHttp500` behavior, transient network error retries, `AbortSignal` cancellation non-retry, non-retryable 401/403 protection, safe non-idempotent POST protection).
+  - Added `executeWithClient` operational boundary method to `PanelCredentialService`.
+
+### Fixed
+
+- **Accidental Credential Exposure during Object Serialization**:
+  - Implemented sanitized `toJSON()` and `[Symbol.for("nodejs.util.inspect.custom")]()` methods on `PterodactylClient` and `CredentialEncryptionService` to prevent leaking API keys or master keys during `JSON.stringify` or `console.log` / `util.inspect`.
+- **Logger Redaction Paths**:
+  - Expanded `pino` redaction paths in `src/utils/logger.ts` to include `apiKey`, `PANELCORD_ENCRYPTION_KEY`, `encryptedApiKey`, `encryptionIv`, `encryptionAuthTag`, `masterKey`, `headers.Authorization`, and their wildcard variants.
+- **Error Cause & Stack Trace Sanitization**:
+  - Enhanced `PterodactylError` in `src/services/pterodactyl/errors/base.ts` to sanitize underlying `cause.message`, `cause.stack`, and `this.stack` against `apiKeyToRedact`.
+- **Circular Module Dependencies**:
+  - Eliminated circular dependencies between `client.ts`, `endpoints/servers.ts`, and `serverDiscoveryService.ts` by introducing `PterodactylHttpClient` interface in `types/common.ts` and moving `validateServerItem` into `endpoints/servers.ts`.
+- **Server Discovery Subuser Permissions Normalization**:
+  - Fixed `ServerDiscoveryService.discoverServers` to forward Fractal item-level `meta` (`user_permissions`, `is_server_owner`) to `normalizeServer`, ensuring subuser permissions are correctly preserved instead of defaulting to empty arrays.
+
 ## [0.7.0] - 2026-11-12
 
 ### Added

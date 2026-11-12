@@ -200,4 +200,21 @@ export class CredentialEncryptionService {
       );
     }
   }
+
+  /**
+   * Sanitized JSON serialization that masks the raw master encryption key.
+   */
+  public toJSON(): Record<string, unknown> {
+    return {
+      algorithm: AES_GCM_ALGORITHM,
+      keyVersion: CURRENT_ENCRYPTION_KEY_VERSION,
+    };
+  }
+
+  /**
+   * Sanitized custom Node.js inspect representation that prevents master key leaks in logs.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): Record<string, unknown> {
+    return this.toJSON();
+  }
 }

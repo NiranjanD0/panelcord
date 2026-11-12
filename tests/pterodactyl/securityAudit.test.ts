@@ -388,4 +388,62 @@ describe("Security Audit: Pterodactyl Integration", () => {
       expect(malformedRes.state).toBe(PanelConnectionState.API_ERROR);
     });
   });
+
+  describe("5. Credential Serialization & Masking Hardening", () => {
+    it("masks API key in JSON.stringify(client) and util.inspect(client)", async () => {
+      const util = await import("node:util");
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+      });
+
+      const jsonStr = JSON.stringify(client);
+      expect(jsonStr).not.toContain(TEST_API_KEY);
+      expect(JSON.parse(jsonStr)).toEqual({
+        baseUrl: "https://panel.example.com/",
+        defaultTimeoutMs: 10000,
+        allowPrivateNetworks: false,
+      });
+
+      const inspectStr = util.inspect(client);
+      expect(inspectStr).not.toContain(TEST_API_KEY);
+    });
+
+    it("masks master encryption key in JSON.stringify(service) and util.inspect(service)", async () => {
+      const util = await import("node:util");
+      const { CredentialEncryptionService } =
+        await import("../../src/services/pterodactyl/encryptionService.js");
+      const masterKeyHex = "a".repeat(64);
+      const encService = new CredentialEncryptionService({ masterKey: masterKeyHex });
+
+      const jsonStr = JSON.stringify(encService);
+      expect(jsonStr).not.toContain(masterKeyHex);
+      expect(JSON.parse(jsonStr)).toEqual({
+        algorithm: "aes-256-gcm",
+        keyVersion: 1,
+      });
+
+      const inspectStr = util.inspect(encService);
+      expect(inspectStr).not.toContain(masterKeyHex);
+    });
+
+    it("sanitizes error cause message and stack when apiKeyToRedact is provided", async () => {
+      const { PterodactylError } = await import("../../src/services/pterodactyl/errors/base.js");
+      const cause = new Error(`Underlying fetch failed with auth token ${TEST_API_KEY}`);
+      const error = new PterodactylError("API request failed", {
+        apiKeyToRedact: TEST_API_KEY,
+        cause,
+      });
+
+      expect(error.message).not.toContain(TEST_API_KEY);
+      expect((error.cause as Error).message).not.toContain(TEST_API_KEY);
+      expect((error.cause as Error).message).toContain("[REDACTED]");
+      if (typeof error.stack === "string") {
+        expect(error.stack).not.toContain(TEST_API_KEY);
+      }
+      if (typeof (error.cause as Error).stack === "string") {
+        expect((error.cause as Error).stack).not.toContain(TEST_API_KEY);
+      }
+    });
+  });
 });

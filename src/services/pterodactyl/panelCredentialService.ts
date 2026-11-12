@@ -340,6 +340,20 @@ export class PanelCredentialService {
     });
   }
 
+  /**
+   * Executes an operation with an authenticated Pterodactyl client scoped to the connection,
+   * ensuring decrypted credentials remain strictly within the operational boundary.
+   */
+  public async executeWithClient<T>(
+    guildId: string,
+    connectionId: string,
+    fn: (client: PterodactylClient) => Promise<T>,
+    options?: Partial<PterodactylClientConfig>,
+  ): Promise<T> {
+    const client = await this.createClientForConnection(guildId, connectionId, options);
+    return fn(client);
+  }
+
   private validateGuildId(guildId: unknown): string {
     if (!guildId || typeof guildId !== "string" || guildId.trim().length === 0) {
       throw new PterodactylError("guildId is required and must be a non-empty string.");

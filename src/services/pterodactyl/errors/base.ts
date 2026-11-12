@@ -35,7 +35,31 @@ export class PterodactylError extends Error {
     this.isRetryable = options?.isRetryable;
 
     if (options?.cause) {
+      if (
+        options.apiKeyToRedact &&
+        options.apiKeyToRedact.length >= 4 &&
+        options.cause instanceof Error
+      ) {
+        options.cause.message = PterodactylError.sanitizeMessage(
+          options.cause.message,
+          options.apiKeyToRedact,
+        );
+        if (typeof options.cause.stack === "string") {
+          options.cause.stack = PterodactylError.sanitizeMessage(
+            options.cause.stack,
+            options.apiKeyToRedact,
+          );
+        }
+      }
       this.cause = options.cause;
+    }
+
+    if (
+      options?.apiKeyToRedact &&
+      options.apiKeyToRedact.length >= 4 &&
+      typeof this.stack === "string"
+    ) {
+      this.stack = PterodactylError.sanitizeMessage(this.stack, options.apiKeyToRedact);
     }
   }
 

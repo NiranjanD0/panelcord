@@ -526,4 +526,22 @@ export class PterodactylClient {
   public options<T>(path: string, options?: Omit<RequestOptions, "body">): Promise<T> {
     return this.request<T>("OPTIONS", path, options);
   }
+
+  /**
+   * Sanitized JSON serialization that masks sensitive API credentials.
+   */
+  public toJSON(): Record<string, unknown> {
+    return {
+      baseUrl: this.baseUrl.toString(),
+      defaultTimeoutMs: this.defaultTimeoutMs,
+      allowPrivateNetworks: this.allowPrivateNetworks,
+    };
+  }
+
+  /**
+   * Sanitized custom Node.js inspect representation that prevents accidental credential leaks in logs.
+   */
+  public [Symbol.for("nodejs.util.inspect.custom")](): Record<string, unknown> {
+    return this.toJSON();
+  }
 }
