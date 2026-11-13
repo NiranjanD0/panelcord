@@ -9,6 +9,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://panelcord:panelcord_secret@postgres:5432/panelcord?schema=public
+      PANELCORD_ENCRYPTION_KEY: ${PANELCORD_ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy

@@ -7,6 +7,7 @@ import {
   PterodactylUrlError,
   PterodactylServerError,
   PterodactylError,
+  PterodactylAbortError,
 } from "./errors/index.js";
 import {
   PanelConnectionState,
@@ -103,7 +104,7 @@ export class PanelConnectionService {
     }
 
     try {
-      const accountResponse = await client.account.getAccountDetails();
+      const accountResponse = await client.account.getAccountDetails({ signal: params.signal });
 
       // Ensure response conforms to Pterodactyl Client Account Fractal structure
       if (
@@ -139,6 +140,9 @@ export class PanelConnectionService {
         message: `Successfully connected to Pterodactyl panel as ${account.username} (ID: ${account.id}).`,
       };
     } catch (error) {
+      if (error instanceof PterodactylAbortError) {
+        throw error;
+      }
       return this.mapErrorToConnectionResult(error, client.sanitizedBaseUrl);
     }
   }

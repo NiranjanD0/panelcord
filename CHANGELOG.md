@@ -4,6 +4,147 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-13
+
+### Fixed
+
+- **Disconnect Button Acknowledgment Safety (`src/services/panelWorkflowService.ts`)**:
+  - Added `safeDeferUpdate` call immediately after permission validation in `handleDisconnectButton` to prevent Discord 3-second interaction token timeouts during database operations.
+- **Autocomplete Race Condition Protection (`src/services/panelWorkflowService.ts`)**:
+  - Guarded autocomplete responses with `interaction.responded` checks and added safe error fallbacks to prevent unhandled rejections on expired or cancelled autocomplete tokens.
+- **Subcommand Null-Safety (`src/services/panelWorkflowService.ts`)**:
+  - Added `options.getSubcommand(false)` null-safety check in `handleCommand` to provide user-friendly error messages if a raw interaction lacks a subcommand.
+
+## [0.9.0] - 2026-11-13
+
+### Added
+
+- **Discord Panel Connection Workflow (`src/commands/panel.ts`, `src/services/panelWorkflowService.ts`)**:
+  - Implemented `/panel connect` slash command that opens an interactive Discord modal dialog collecting connection name, panel URL, and Pterodactyl Client API key.
+  - Implemented modal input validation with Zod (`connectModalSchema`), ensuring strict length limits and permitted character sets for connection names.
+  - Integrated pre-persistence live authentication and connectivity verification using existing `PanelConnectionService`.
+  - Added secure persistence of credentials via `PanelCredentialService` using AES-256-GCM encryption with contextual AAD and unique IVs.
+  - Added in-flight concurrency locking to prevent race conditions and duplicate submissions for the same connection name.
+  - Implemented `/panel list` command to display all connected panels for the guild with URLs, timestamps, and server mapping status.
+  - Implemented `/panel status` command performing live connectivity and authentication verification with detailed error reporting (distinguishing authentication failure, insufficient permissions, panel unreachable, timeout, and URL errors).
+  - Implemented `/panel settings` command to inspect connection metadata, ID, encryption key version, and SSRF security status.
+  - Implemented `/panel disconnect` command with interactive button confirmation dialog (Confirm/Cancel) before deleting credentials, complete with structured audit logging.
+  - Added dynamic autocomplete support for the `name` option in `/panel disconnect`, `/panel status`, and `/panel settings`.
+- **Security & Multi-Tenant Isolation**:
+  - Enforced Discord `ManageGuild` permission verification across all connection and modification endpoints.
+  - Guaranteed zero plaintext storage and zero secret exposure: API keys are never rendered in Discord messages, embeds, logs, or error responses.
+  - Preserved multi-tenant SSRF protections restricting private/loopback/RFC1918 address access by default.
+
+## [0.8.1] - 2026-11-13
+
+### Fixed
+
+- **Slash Command Deployment Safety (`src/lib/commandRegistration.ts`)**:
+  - Guarded against accidental global slash command deletion by throwing an error when an empty command array is supplied without explicit `allowEmpty: true`.
+  - Added Discord snowflake format validation (`/^\d{17,20}$/`) for `clientId` and `guildId`.
+- **RegExp State Pollution (`src/interactions/dispatcher.ts`)**:
+  - Ensured `customId.lastIndex = 0` is reset prior to `.exec()` matching, preventing handler failure on alternating executions when RegExp routes use `/g` or `/y` flags.
+- **Component Update Race Conditions (`src/interactions/responses.ts`)**:
+  - Handled Discord error `40060` (Interaction Already Acknowledged) in `safeUpdate` by gracefully falling back to `followUp`.
+  - Handled Discord error `10062` (Unknown Interaction) in `safeUpdate` by returning `null` to prevent unhandled rejections on expired tokens.
+- **Fail-Safe Interaction Error Handling (`src/interactions/errorHandler.ts`)**:
+  - Wrapped `handleInteractionError` in a top-level try/catch block so that unexpected exceptions or Discord API rejections during error reporting cannot trigger unhandled process rejections.
+- **Structured Error Serialization (`src/utils/logger.ts`)**:
+  - Bound standard Pino error serializers to both `err` and `error` keys so nested error causes and stack traces are properly structured in logs.
+
+### Added
+
+- **Interaction Handler Isolation & Warnings (`src/interactions/dispatcher.ts`)**:
+  - Added `clearHandlers()` to reset registered component and modal handlers for test isolation.
+  - Added warning log emits when registering duplicate string `customId` handlers.
+- **Declarative Deferral for Components (`src/types/interaction.ts`, `src/interactions/dispatcher.ts`)**:
+  - Added `defer`, `deferEphemeral`, and `deferUpdate` configuration options to button and select menu handlers.
+- **Autocomplete Interaction Routing (`src/types/command.ts`, `src/interactions/dispatcher.ts`)**:
+  - Added optional `autocomplete` callback on `Command` and wired interaction dispatching for autocomplete events.
+
+## [0.8.0] - 2026-11-13
+
+### Added
+
+- **Slash Command Registration Infrastructure (`src/lib/commandRegistration.ts`)**:
+  - Implemented `validateCommand` and `validateCommands` enforcing Discord slash command specifications (1-32 lowercase characters matching Unicode regex, non-empty descriptions up to 100 characters, duplicate name prevention) using Zod.
+  - Implemented `deployCommands` service supporting both development guild-specific and production global deployment via Discord REST API.
+  - Refactored `src/scripts/deploy-commands.ts` CLI deployment script to use the centralized, testable `deployCommands` service.
+- **Interaction Response Utilities (`src/interactions/responses.ts`)**:
+  - Implemented state-aware response helpers: `safeReply`, `safeDefer`, `safeUpdate`, `safeDeferUpdate`, and `safeFollowUp`.
+  - Added race condition and duplicate acknowledgement protection (Discord error `40060`).
+  - Added silent handling for expired interactions (Discord error `10062`) to prevent unhandled promise rejections when the 3-second acknowledgement deadline is exceeded.
+  - Implemented standardized visual response payload formatters: `createErrorPayload`, `createSuccessPayload`, and `createInfoPayload`.
+- **Centralized Interaction Error Handling (`src/interactions/errorHandler.ts`)**:
+  - Implemented centralized exception handler `handleInteractionError` and `getUserFriendlyErrorMessage`.
+  - Guaranteed zero information leakage: internal error messages, database credentials, and stack traces are never exposed to Discord users.
+  - Mapped specific error scenarios including `DatabaseUnavailableError` and Discord error `50013` (Missing Permissions).
+  - Enriched structured Pino logging with sanitized interaction context (`interactionId`, `userId`, `guildId`, `channelId`, `commandName`/`customId`).
+- **Centralized Interaction Dispatcher (`src/interactions/dispatcher.ts`)**:
+  - Implemented `InteractionDispatcher` routing slash commands, buttons, select menus (string, user, role, channel, mentionable), and modal submissions.
+  - Supported dynamic routing via RegExp patterns with named capture groups forwarded as route parameters.
+  - Added safe fallback handling for unknown or inactive interactive components.
+  - Maintained full backward compatibility with the existing `interactionManager` export.
+  - Streamlined `src/events/interactionCreate.ts` to delegate all interaction routing to `interactionDispatcher.dispatch()`.
+- **Automated Test Suite**:
+  - Added 48 unit tests across `tests/commandRegistration.test.ts`, `tests/interactionDispatcher.test.ts`, `tests/interactionResponses.test.ts`, and `tests/interactionErrorHandling.test.ts`.
+
+## [0.7.1] - 2026-11-12
+
+### Added
+
+- **Prisma SQL Migration & Environment**:
+  - Generated initial Prisma migration `prisma/migrations/20261112204500_init/migration.sql` creating the `panel_connections` table, `guild_id` index, and `(guild_id, name)` unique constraint.
+  - Added `migration_lock.toml` for Postgres provider tracking.
+  - Updated `docker-compose.yml` to pass `PANELCORD_ENCRYPTION_KEY` to the bot service.
+- **End-to-End Integration Test Suite**:
+  - Implemented comprehensive automated test suite in `tests/pterodactyl/e2eWorkflow.test.ts` covering Workflows A through E:
+    - Workflow A: Panel Connection Lifecycle (URL validation, API key validation, encryption, persistence, sanitized metadata retrieval, panel verification, credential non-exposure).
+    - Workflow B: Server Discovery Flow (persisted connection retrieval, in-boundary decryption, multi-page discovery, server normalization, account ownership & permission verification).
+    - Workflow C: Server Details & Telemetry (online telemetry, offline/stopped metrics, Wings daemon outage isolation with `resourcesUnavailableReason`, Pterodactyl 0-limit unlimited convention).
+    - Workflow D: Multi-Tenant Security & Isolation (cross-guild read/update/delete rejection, scoped querying, AAD tamper detection and ciphertext swapping protection).
+    - Workflow E: Resilience & Failure Recovery (HTTP 429 Retry-After parsing and retry recovery, 502/503/504 backoff retries, configurable `retryHttp500` behavior, transient network error retries, `AbortSignal` cancellation non-retry, non-retryable 401/403 protection, safe non-idempotent POST protection).
+  - Added `executeWithClient` operational boundary method to `PanelCredentialService`.
+
+### Fixed
+
+- **Accidental Credential Exposure during Object Serialization**:
+  - Implemented sanitized `toJSON()` and `[Symbol.for("nodejs.util.inspect.custom")]()` methods on `PterodactylClient` and `CredentialEncryptionService` to prevent leaking API keys or master keys during `JSON.stringify` or `console.log` / `util.inspect`.
+- **Logger Redaction Paths**:
+  - Expanded `pino` redaction paths in `src/utils/logger.ts` to include `apiKey`, `PANELCORD_ENCRYPTION_KEY`, `encryptedApiKey`, `encryptionIv`, `encryptionAuthTag`, `masterKey`, `headers.Authorization`, and their wildcard variants.
+- **Error Cause & Stack Trace Sanitization**:
+  - Enhanced `PterodactylError` in `src/services/pterodactyl/errors/base.ts` to sanitize underlying `cause.message`, `cause.stack`, and `this.stack` against `apiKeyToRedact`.
+- **Circular Module Dependencies**:
+  - Eliminated circular dependencies between `client.ts`, `endpoints/servers.ts`, and `serverDiscoveryService.ts` by introducing `PterodactylHttpClient` interface in `types/common.ts` and moving `validateServerItem` into `endpoints/servers.ts`.
+- **Server Discovery Subuser Permissions Normalization**:
+  - Fixed `ServerDiscoveryService.discoverServers` to forward Fractal item-level `meta` (`user_permissions`, `is_server_owner`) to `normalizeServer`, ensuring subuser permissions are correctly preserved instead of defaulting to empty arrays.
+
+## [0.7.0] - 2026-11-12
+
+### Added
+
+- **Prisma Database Schema (`PanelConnection`)**:
+  - Implemented `PanelConnection` model in `prisma/schema.prisma` with `id`, `guildId`, `name`, `panelUrl`, `encryptedApiKey`, `encryptionIv`, `encryptionAuthTag`, `encryptionKeyVersion`, and timestamps.
+  - Enforced `@@unique([guildId, name])` constraint ensuring unique connection names per Discord guild while permitting multiple connections per guild.
+  - Indexed `guildId` (`@@index([guildId])`) for fast multi-tenant query performance.
+  - Designed schema with forward compatibility for future Pterodactyl server-to-Discord mappings.
+- **AES-256-GCM Credential Encryption Service (`CredentialEncryptionService`)**:
+  - Implemented `CredentialEncryptionService` in `src/services/pterodactyl/encryptionService.ts` using `node:crypto`.
+  - Enforced 32-byte master encryption keys validated from `PANELCORD_ENCRYPTION_KEY` (format `openssl rand -hex 32`).
+  - Generated unique 12-byte (96-bit) cryptographically secure random IVs per encryption operation.
+  - Implemented 16-byte (128-bit) GCM authentication tag verification on decryption, failing closed on tampered ciphertext or tags.
+  - Implemented contextual Additional Authenticated Data (AAD) binding (`panelcord:aad:v1:<guildId>:<connectionId>`), preventing ciphertext swapping across guilds or records without detection.
+  - Supported ciphertext key versioning (`encryptionKeyVersion: 1`) for future key rotation compatibility.
+  - Strict fail-closed design with guaranteed credential redaction and zero plaintext fallback.
+- **Panel Credential Service (`PanelCredentialService`)**:
+  - Implemented `PanelCredentialService` in `src/services/pterodactyl/panelCredentialService.ts` providing multi-tenant scoped lifecycle management (`createConnection`, `getConnection`, `listConnections`, `updateConnection`, `deleteConnection`).
+  - Enforced mandatory guild scoping on all operations, rejecting cross-guild access attempts.
+  - Restricted credential decryption to an explicit internal method (`getDecryptedConnection`).
+  - Integrated `verifyBeforeSaving` to prevent storing broken or invalid credentials.
+  - Implemented `verifyStoredConnection` and `createClientForConnection` factory, scoping decrypted API keys strictly to execution time without long-lived shared memory caching.
+- **Automated Test Suite**:
+  - Added 39 automated tests across `tests/pterodactyl/encryptionService.test.ts` and `tests/pterodactyl/panelCredentialService.test.ts` covering encryption round-trips, unique IVs, tampered ciphertexts/tags, AAD mismatches, key length validation, cross-guild isolation, CRUD lifecycle, duplicate name handling, and stored connection verification.
+
 ## [0.6.0] - 2026-11-12
 
 ### Added
@@ -16,14 +157,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
   - Added specialized error classes `PterodactylAbortError` and `PterodactylQueueFullError`.
 - **Request Safety & Method Idempotency**:
   - Restricted automated retries strictly to safe/idempotent HTTP methods (`GET`, `HEAD`, `OPTIONS`) by default.
-  - Guarded mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`) against blind retries, allowing retries only when explicitly opted in via `retryUnsafeMethods: true`.
-  - Automatic retries targeted exclusively at transient failures (HTTP 429, 502, 503, 504, connection drops, and request timeouts). Permanent failures (HTTP 400, 401, 403, 404, 422, 500, non-JSON responses, URL validation failures) fail immediately on attempt 1.
+  - Guarded mutating methods (`POST`, `PUT`, `PATCH`, `DELETE`) against blind retries, ensuring `retryUnsafeMethods: true` is strictly an explicit per-operation decision in `RequestOptions`, never a client-wide default.
+  - Automatic retries targeted exclusively at transient failures (HTTP 429, 502, 503, 504, connection drops, and request timeouts). Added configurable `retryHttp500` and `retryableStatusCodes` overrides for panels experiencing transient internal errors.
+  - Guarded against early retries when `Retry-After` exceeds `maxDelayMs` via `exceededMaxDelayBehavior: "fail" | "defer"`. The client never retries earlier than the panel requested, failing immediately by default instead of silently retrying early.
 - **Per-Panel Concurrency Management**:
   - Implemented `PanelConcurrencyManager` in `src/services/pterodactyl/resilience/concurrency.ts` to manage request concurrency (`maxConcurrent: 5`) and bounded queuing (`maxQueueSize: 100`) isolated per panel origin.
   - Ensures slow or unresponsive panels never block or delay operations targeting other panels.
-  - Supports `AbortSignal` cancellation for queued requests, immediately removing them from the pending queue and rejecting with `PterodactylAbortError` without consuming concurrency capacity.
+  - Supports `AbortSignal` cancellation for queued requests, immediately removing them from the pending queue and releasing idle queues from memory without consuming concurrency capacity.
+  - Guarantees concurrency slots are freed in `finally` even after exceptions.
+- **Panel Connection Service Lifecycle**:
+  - Wired `AbortSignal` cancellation through `verifyConnection` and `AccountEndpoint.getAccountDetails`, allowing callers to abort connection testing immediately while preserving fast diagnostics (`maxRetries: 0`) and custom `timeoutMs` handling.
 - **Automated Test Suite**:
-  - Added 38 automated tests in `tests/pterodactyl/resilience.test.ts` covering Retry-After parsing, exponential backoff, jitter distribution, retryable status codes, method idempotency, concurrency slot limits, queue exhaustion, per-panel isolation, cancellation during queueing and sleep, and credential redaction.
+  - Added 46 automated tests in `tests/pterodactyl/resilience.test.ts` and 18 in `tests/pterodactyl/connectionService.test.ts` covering Retry-After parsing, exponential backoff, jitter distribution, retryable status codes, HTTP 500 configurability, method idempotency, concurrency slot limits, queue exhaustion, idle queue cleanup, cancellation during queueing/sleep, connection timeout/abort, and credential redaction.
 
 ## [0.5.1] - 2026-11-12
 

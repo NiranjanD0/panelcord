@@ -7,8 +7,11 @@ import type {
   ServerDiscoveryResult,
   PterodactylFractalItem,
 } from "./types/index.js";
-import { PterodactylInvalidResponseError, PterodactylUrlError } from "./errors/index.js";
+import { PterodactylUrlError } from "./errors/index.js";
 import { isBlockedHost } from "./security.js";
+import { validateServerItem } from "./endpoints/servers.js";
+
+export { validateServerItem };
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const DEFAULT_MAX_PAGES = 50;
@@ -173,7 +176,10 @@ export class ServerDiscoveryService {
       // Extract and normalize servers
       for (const item of response.data) {
         this.validateServerItem(item);
-        const normalized = normalizeServer(item.attributes);
+        const normalized = normalizeServer(
+          item.attributes,
+          item.meta as { is_server_owner?: boolean; user_permissions?: string[] } | undefined,
+        );
 
         // Deduplicate across pages while preserving deterministic initial order
         if (!serverMap.has(normalized.identifier)) {
@@ -262,103 +268,5 @@ export class ServerDiscoveryService {
     item: unknown,
   ): asserts item is PterodactylFractalItem<PterodactylServerAttributes> {
     validateServerItem(item);
-  }
-}
-
-/**
- * Validates a Pterodactyl Fractal server item structure and ensures critical fields exist.
- */
-export function validateServerItem(
-  item: unknown,
-): asserts item is PterodactylFractalItem<PterodactylServerAttributes> {
-  if (
-    !item ||
-    typeof item !== "object" ||
-    (item as Record<string, unknown>).object !== "server" ||
-    !(item as Record<string, unknown>).attributes ||
-    typeof (item as Record<string, unknown>).attributes !== "object"
-  ) {
-    throw new PterodactylInvalidResponseError(
-      'Expected a Fractal item with object "server" and valid attributes in server response.',
-      item,
-    );
-  }
-
-  const attrs = (item as Record<string, unknown>).attributes as Record<string, unknown>;
-
-  // Validate critical identification fields
-  if (
-    !attrs.identifier ||
-    typeof attrs.identifier !== "string" ||
-    attrs.identifier.trim().length === 0
-  ) {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required non-empty string identifier.",
-      attrs,
-    );
-  }
-  if (!attrs.uuid || typeof attrs.uuid !== "string" || attrs.uuid.trim().length === 0) {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required non-empty string uuid.",
-      attrs,
-    );
-  }
-  if (!attrs.name || typeof attrs.name !== "string") {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required string name.",
-      attrs,
-    );
-  }
-
-  // Validate server_owner critical boolean field (prevents misclassifying subusers/owners)
-  if (typeof attrs.server_owner !== "boolean") {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required boolean server_owner field.",
-      attrs,
-    );
-  }
-
-  // Validate limits critical configuration object
-  if (!attrs.limits || typeof attrs.limits !== "object") {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required limits configuration object.",
-      attrs,
-    );
-  }
-  const limits = attrs.limits as Record<string, unknown>;
-  if (
-    typeof limits.memory !== "number" ||
-    isNaN(limits.memory) ||
-    typeof limits.disk !== "number" ||
-    isNaN(limits.disk) ||
-    typeof limits.cpu !== "number" ||
-    isNaN(limits.cpu)
-  ) {
-    throw new PterodactylInvalidResponseError(
-      "Server item limits configuration contains missing or non-numeric values.",
-      attrs,
-    );
-  }
-
-  // Validate feature_limits critical configuration object
-  if (!attrs.feature_limits || typeof attrs.feature_limits !== "object") {
-    throw new PterodactylInvalidResponseError(
-      "Server item is missing required feature_limits configuration object.",
-      attrs,
-    );
-  }
-  const featureLimits = attrs.feature_limits as Record<string, unknown>;
-  if (
-    typeof featureLimits.databases !== "number" ||
-    isNaN(featureLimits.databases) ||
-    typeof featureLimits.allocations !== "number" ||
-    isNaN(featureLimits.allocations) ||
-    typeof featureLimits.backups !== "number" ||
-    isNaN(featureLimits.backups)
-  ) {
-    throw new PterodactylInvalidResponseError(
-      "Server item feature_limits configuration contains missing or non-numeric values.",
-      attrs,
-    );
   }
 }

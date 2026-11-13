@@ -16,6 +16,7 @@ export const envSchema = z.object({
       if (typeof val === "boolean") return val;
       return val.toLowerCase() === "true" || val === "1";
     }),
+  PANELCORD_ENCRYPTION_KEY: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

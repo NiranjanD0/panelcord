@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { PanelConnectionService } from "../../src/services/pterodactyl/connectionService.js";
 import { PanelConnectionState } from "../../src/services/pterodactyl/types/connection.js";
+import { PterodactylAbortError } from "../../src/services/pterodactyl/errors/index.js";
 
 describe("PanelConnectionService (Task 02.2)", () => {
   const TEST_PANEL_URL = "https://panel.example.com";
@@ -365,6 +366,59 @@ describe("PanelConnectionService (Task 02.2)", () => {
 
       // Verify API key was not leaked
       expect(JSON.stringify(result)).not.toContain(TEST_API_KEY);
+    });
+  });
+
+  describe("Timeout & Cancellation Behavior", () => {
+    it("respects custom timeoutMs and returns TIMEOUT state upon connection timeout", async () => {
+      globalThis.fetch = vi.fn().mockImplementation(
+        (_url, init?: RequestInit) =>
+          new Promise((_, reject) => {
+            if (init?.signal?.aborted) {
+              const err = new Error("The operation timed out");
+              err.name = "TimeoutError";
+              return reject(err);
+            }
+            init?.signal?.addEventListener("abort", () => {
+              const err = new Error("The operation timed out");
+              err.name = "TimeoutError";
+              reject(err);
+            });
+          }),
+      );
+
+      const result = await service.verifyConnection({
+        panelUrl: TEST_PANEL_URL,
+        apiKey: TEST_API_KEY,
+        timeoutMs: 20, // Fail fast at 20ms
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.state).toBe(PanelConnectionState.TIMEOUT);
+      expect(result.message).toContain("timed out");
+    });
+
+    it("supports AbortSignal and throws PterodactylAbortError when cancelled by caller", async () => {
+      const controller = new AbortController();
+
+      globalThis.fetch = vi.fn().mockImplementation(
+        () =>
+          new Promise((_, reject) => {
+            setTimeout(() => {
+              reject(new DOMException("The operation was aborted.", "AbortError"));
+            }, 100);
+          }),
+      );
+
+      const verifyPromise = service.verifyConnection({
+        panelUrl: TEST_PANEL_URL,
+        apiKey: TEST_API_KEY,
+        signal: controller.signal,
+      });
+
+      setTimeout(() => controller.abort(new Error("User cancelled connection test")), 10);
+
+      await expect(verifyPromise).rejects.toThrow(PterodactylAbortError);
     });
   });
 });

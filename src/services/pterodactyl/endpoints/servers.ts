@@ -1,5 +1,5 @@
-import type { PterodactylClient } from "../client.js";
 import type {
+  PterodactylHttpClient,
   PterodactylFractalList,
   PterodactylFractalItem,
   PterodactylServerAttributes,
@@ -7,9 +7,106 @@ import type {
   GetServersParams,
 } from "../types/index.js";
 import { PterodactylInvalidResponseError, PterodactylValidationError } from "../errors/index.js";
-import { validateServerItem } from "../serverDiscoveryService.js";
 
 export const SERVER_IDENTIFIER_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Validates a Pterodactyl Fractal server item structure and ensures critical fields exist.
+ */
+export function validateServerItem(
+  item: unknown,
+): asserts item is PterodactylFractalItem<PterodactylServerAttributes> {
+  if (
+    !item ||
+    typeof item !== "object" ||
+    (item as Record<string, unknown>).object !== "server" ||
+    !(item as Record<string, unknown>).attributes ||
+    typeof (item as Record<string, unknown>).attributes !== "object"
+  ) {
+    throw new PterodactylInvalidResponseError(
+      'Expected a Fractal item with object "server" and valid attributes in server response.',
+      item,
+    );
+  }
+
+  const attrs = (item as Record<string, unknown>).attributes as Record<string, unknown>;
+
+  // Validate critical identification fields
+  if (
+    !attrs.identifier ||
+    typeof attrs.identifier !== "string" ||
+    attrs.identifier.trim().length === 0
+  ) {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required non-empty string identifier.",
+      attrs,
+    );
+  }
+  if (!attrs.uuid || typeof attrs.uuid !== "string" || attrs.uuid.trim().length === 0) {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required non-empty string uuid.",
+      attrs,
+    );
+  }
+  if (!attrs.name || typeof attrs.name !== "string") {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required string name.",
+      attrs,
+    );
+  }
+
+  // Validate server_owner critical boolean field (prevents misclassifying subusers/owners)
+  if (typeof attrs.server_owner !== "boolean") {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required boolean server_owner field.",
+      attrs,
+    );
+  }
+
+  // Validate limits critical configuration object
+  if (!attrs.limits || typeof attrs.limits !== "object") {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required limits configuration object.",
+      attrs,
+    );
+  }
+  const limits = attrs.limits as Record<string, unknown>;
+  if (
+    typeof limits.memory !== "number" ||
+    isNaN(limits.memory) ||
+    typeof limits.disk !== "number" ||
+    isNaN(limits.disk) ||
+    typeof limits.cpu !== "number" ||
+    isNaN(limits.cpu)
+  ) {
+    throw new PterodactylInvalidResponseError(
+      "Server item limits configuration contains missing or non-numeric values.",
+      attrs,
+    );
+  }
+
+  // Validate feature_limits critical configuration object
+  if (!attrs.feature_limits || typeof attrs.feature_limits !== "object") {
+    throw new PterodactylInvalidResponseError(
+      "Server item is missing required feature_limits configuration object.",
+      attrs,
+    );
+  }
+  const featLimits = attrs.feature_limits as Record<string, unknown>;
+  if (
+    typeof featLimits.databases !== "number" ||
+    isNaN(featLimits.databases) ||
+    typeof featLimits.allocations !== "number" ||
+    isNaN(featLimits.allocations) ||
+    typeof featLimits.backups !== "number" ||
+    isNaN(featLimits.backups)
+  ) {
+    throw new PterodactylInvalidResponseError(
+      "Server item feature_limits configuration contains missing or non-numeric values.",
+      attrs,
+    );
+  }
+}
 
 /**
  * Validates a server identifier to prevent path traversal or injection.
@@ -30,7 +127,7 @@ export function validateServerIdentifier(identifier: string): string {
 }
 
 export class ServersEndpoint {
-  constructor(private readonly client: PterodactylClient) {}
+  constructor(private readonly client: PterodactylHttpClient) {}
 
   /**
    * Retrieves accessible servers from the Pterodactyl Client API.

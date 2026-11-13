@@ -108,12 +108,27 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
       expect(delay).toBe(20000);
     });
 
-    it("strictly caps delay at maxDelayMs", () => {
+    it("strictly caps exponential backoff delay at maxDelayMs", () => {
       const config = { baseDelayMs: 10000, maxDelayMs: 15000, jitter: false };
       // Attempt 3 backoff would be 80000ms, capped to 15000ms
       expect(calculateBackoff(3, config)).toBe(15000);
-      // Large Retry-After capped to maxDelayMs
-      expect(calculateBackoff(0, config, 9999)).toBe(15000);
+    });
+
+    it("returns -1 when server Retry-After exceeds maxDelayMs under default fail policy", () => {
+      const config = { baseDelayMs: 1000, maxDelayMs: 15000, jitter: false };
+      // Server demands 20 seconds, maxDelayMs is 15s. Default policy fails rather than retrying early.
+      expect(calculateBackoff(0, config, 20)).toBe(-1);
+    });
+
+    it("defers to full server Retry-After delay when exceededMaxDelayBehavior is defer", () => {
+      const config = {
+        baseDelayMs: 1000,
+        maxDelayMs: 15000,
+        jitter: false,
+        exceededMaxDelayBehavior: "defer" as const,
+      };
+      // Server demands 20 seconds; defer policy waits the full 20,000ms
+      expect(calculateBackoff(0, config, 20)).toBe(20000);
     });
   });
 
@@ -277,6 +292,45 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
         manager.acquire("https://panel.example.com", () => Promise.resolve(), controller.signal),
       ).rejects.toThrow(PterodactylAbortError);
     });
+
+    it("releases active concurrency slot and cleans up queue even after exceptions", async () => {
+      const manager = new PanelConcurrencyManager({ maxConcurrent: 1 });
+      const origin = "https://panel.example.com";
+
+      // Task that throws
+      await expect(
+        manager.acquire(origin, async () => {
+          throw new Error("Task exploded");
+        }),
+      ).rejects.toThrow("Task exploded");
+
+      // Verify active count is 0 and idle queue is cleaned up from memory
+      expect(manager.getActiveCount(origin)).toBe(0);
+      expect(manager.getQueueLength(origin)).toBe(0);
+      expect(manager.hasQueue(origin)).toBe(false);
+
+      // Verify subsequent task runs immediately without being blocked
+      const result = await manager.acquire(origin, () => Promise.resolve("recovered"));
+      expect(result).toBe("recovered");
+      expect(manager.hasQueue(origin)).toBe(false);
+    });
+
+    it("cleans up panel queue completely when all active and queued tasks complete or abort", async () => {
+      const manager = new PanelConcurrencyManager({ maxConcurrent: 1 });
+      const origin = "https://panel.example.com";
+
+      const controller = new AbortController();
+      const t1 = manager.acquire(origin, () => sleep(20));
+      const t2 = manager.acquire(origin, () => Promise.resolve(2), controller.signal);
+
+      expect(manager.hasQueue(origin)).toBe(true);
+      controller.abort();
+      await expect(t2).rejects.toThrow(PterodactylAbortError);
+      await t1;
+
+      expect(manager.hasQueue(origin)).toBe(false);
+      expect(manager.queueCount).toBe(0);
+    });
   });
 
   describe("Client Rate Limit Handling (HTTP 429)", () => {
@@ -318,7 +372,7 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
         return Promise.resolve(
           new Response(JSON.stringify({ errors: [{ detail: "Rate limited." }] }), {
             status: 429,
-            headers: { "Content-Type": "application/json", "Retry-After": "5" },
+            headers: { "Content-Type": "application/json", "Retry-After": "0" },
           }),
         );
       });
@@ -326,7 +380,7 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
       const client = new PterodactylClient({
         baseUrl: TEST_BASE_URL,
         apiKey: TEST_API_KEY,
-        retry: { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 5 },
+        retry: { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 50 },
       });
 
       try {
@@ -336,10 +390,41 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
         expect(err).toBeInstanceOf(PterodactylRateLimitError);
         const rateLimitErr = err as PterodactylRateLimitError;
         expect(rateLimitErr.statusCode).toBe(429);
-        expect(rateLimitErr.retryAfterSeconds).toBe(5);
+        expect(rateLimitErr.retryAfterSeconds).toBe(0);
         expect(rateLimitErr.attemptCount).toBe(3); // 1 initial + 2 retries
         expect(rateLimitErr.isRetryable).toBe(true);
         expect(callCount).toBe(3);
+      }
+    });
+
+    it("fails immediately and NEVER retries early when server Retry-After exceeds maxDelayMs under default fail policy", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        return Promise.resolve(
+          new Response(JSON.stringify({ errors: [{ detail: "Rate limited." }] }), {
+            status: 429,
+            headers: { "Content-Type": "application/json", "Retry-After": "60" },
+          }),
+        );
+      });
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+        retry: { maxRetries: 3, baseDelayMs: 1, maxDelayMs: 5000 },
+      });
+
+      try {
+        await client.get("/api/client");
+        expect.fail("Expected request to fail immediately rather than retrying early");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PterodactylRateLimitError);
+        const rateLimitErr = err as PterodactylRateLimitError;
+        expect(rateLimitErr.retryAfterSeconds).toBe(60);
+        expect(rateLimitErr.attemptCount).toBe(1); // Failed immediately without retrying early
+        expect(rateLimitErr.isRetryable).toBe(false); // Cannot be retried within maxDelayMs
+        expect(callCount).toBe(1); // Exactly 1 call, never retried at 5s!
       }
     });
 
@@ -505,6 +590,68 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
       }
     });
 
+    it("retries 500 Internal Server Error when retryHttp500 is explicitly configured", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ errors: [{ detail: "Temporary Internal Error" }] }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+        retry: { maxRetries: 2, baseDelayMs: 1, retryHttp500: true },
+      });
+
+      const res = await client.get<{ success: boolean }>("/api/client");
+      expect(res.success).toBe(true);
+      expect(callCount).toBe(2);
+    });
+
+    it("retries 500 when custom retryableStatusCodes includes 500", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ errors: [{ detail: "Temporary Error" }] }), {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      });
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+        retry: { maxRetries: 2, baseDelayMs: 1, retryableStatusCodes: [500, 502] },
+      });
+
+      const res = await client.get<{ success: boolean }>("/api/client");
+      expect(res.success).toBe(true);
+      expect(callCount).toBe(2);
+    });
+
     it("does NOT retry non-JSON responses on 200 OK", async () => {
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation(() => {
@@ -636,6 +783,42 @@ describe("Pterodactyl API Resilience & Rate Limit Management", () => {
 
       await client.head("/api/client");
       expect(callCount).toBe(2);
+    });
+
+    it("ensures retryUnsafeMethods is strictly a per-operation parameter, never a client-wide default", async () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        return Promise.resolve(
+          new Response("Bad Gateway", {
+            status: 502,
+            headers: { "Content-Type": "text/plain" },
+          }),
+        );
+      });
+
+      const client = new PterodactylClient({
+        baseUrl: TEST_BASE_URL,
+        apiKey: TEST_API_KEY,
+        retry: { maxRetries: 2, baseDelayMs: 1 },
+      });
+
+      // Default POST without per-operation override fails on attempt 1 without retry
+      await expect(
+        client.post("/api/client/servers/123/power", { signal: "restart" }),
+      ).rejects.toThrow(PterodactylServerError);
+      expect(callCount).toBe(1);
+
+      // Only with explicit per-operation retryUnsafeMethods: true does POST retry
+      callCount = 0;
+      await expect(
+        client.post(
+          "/api/client/servers/123/power",
+          { signal: "restart" },
+          { retryUnsafeMethods: true },
+        ),
+      ).rejects.toThrow(PterodactylServerError);
+      expect(callCount).toBe(3); // 1 initial + 2 retries
     });
   });
 

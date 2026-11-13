@@ -69,17 +69,30 @@ export function isRetryableStatusCode(
   return customCodes.includes(statusCode);
 }
 
+export interface BackoffConfig {
+  baseDelayMs: number;
+  maxDelayMs: number;
+  jitter: boolean;
+  exceededMaxDelayBehavior?: "fail" | "defer";
+}
+
 /**
  * Calculates exponential backoff delay with randomized jitter and respects server Retry-After headers.
+ *
+ * Guarantees:
+ * 1. The client NEVER retries earlier than the server-requested Retry-After delay.
+ * 2. If the server-requested delay exceeds maxDelayMs:
+ *    - By default ("fail"), returns -1 so the client aborts and fails rather than retrying early.
+ *    - If "defer" is configured, returns the full server delay without early truncation.
  *
  * @param attempt Current retry attempt index (0 for first retry)
  * @param config Retry policy configuration
  * @param retryAfterSeconds Server-provided Retry-After delay in seconds
- * @returns Delay in milliseconds
+ * @returns Delay in milliseconds, or -1 if the delay exceeds maxDelayMs under "fail" policy
  */
 export function calculateBackoff(
   attempt: number,
-  config: { baseDelayMs: number; maxDelayMs: number; jitter: boolean },
+  config: BackoffConfig,
   retryAfterSeconds?: number,
 ): number {
   const safeAttempt = Math.max(0, attempt);
@@ -97,6 +110,13 @@ export function calculateBackoff(
     const retryAfterMs = retryAfterSeconds * 1000;
     if (retryAfterMs > delay) {
       delay = retryAfterMs;
+    }
+
+    if (retryAfterMs > config.maxDelayMs) {
+      if (config.exceededMaxDelayBehavior === "defer") {
+        return retryAfterMs;
+      }
+      return -1;
     }
   }
 
